@@ -1,0 +1,88 @@
+
+There are no discarded input sections
+
+Memory Configuration
+
+Name             Origin             Length             Attributes
+DTCM             0x10000000         0x00010000         xrw
+SRAM1            0x20000000         0x04000000         xrw
+FLASH            0x08000000         0x04000000         xr
+*default*        0x00000000         0xffffffff
+
+Linker script and memory map
+
+LOAD C:\Users\YASHWA~1\AppData\Local\Temp\ccWqLLmG.o
+START GROUP
+LOAD C:/Users/Yashwanth/Downloads/arm-gnu-toolchain-15.2.rel1-mingw-w64-i686-arm-none-eabi/bin/../lib/gcc/arm-none-eabi/15.2.1/thumb/v7e-m/nofp\libgcc.a
+LOAD C:/Users/Yashwanth/Downloads/arm-gnu-toolchain-15.2.rel1-mingw-w64-i686-arm-none-eabi/bin/../lib/gcc/arm-none-eabi/15.2.1/../../../../arm-none-eabi/lib/thumb/v7e-m/nofp\libc.a
+END GROUP
+                0x00000400                        _Min_Stack_Size = 0x400
+                0x10010000                        _estack = (ORIGIN (DTCM) + LENGTH (DTCM))
+
+.text           0x20000000  0x2156544 load address 0x08000000
+ *(.text)
+ .text          0x20000000        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\ccWqLLmG.o
+ *(.text*)
+ .text.vision_processing
+                0x20000000   0x9f38ea C:\Users\YASHWA~1\AppData\Local\Temp\ccWqLLmG.o
+                0x20000000                vision_processing
+ .text.object_detection
+                0x209f38ea  0x13e71ca C:\Users\YASHWA~1\AppData\Local\Temp\ccWqLLmG.o
+                0x209f38ea                object_detection
+ *fill*         0x21ddaab4        0x4 
+ .text.object_detection.__stub
+                0x21ddaab8       0x10 linker stubs
+ .text.can_publish
+                0x21ddaac8   0x27ce44 C:\Users\YASHWA~1\AppData\Local\Temp\ccWqLLmG.o
+                0x21ddaac8                can_publish
+ .text.safety_monitor
+                0x2205790c    0xfec22 C:\Users\YASHWA~1\AppData\Local\Temp\ccWqLLmG.o
+                0x2205790c                safety_monitor
+ .text.main     0x2215652e       0x16 C:\Users\YASHWA~1\AppData\Local\Temp\ccWqLLmG.o
+                0x2215652e                main
+
+.glue_7         0x22156544        0x0 load address 0x0a156544
+ .glue_7        0x22156544        0x0 linker stubs
+
+.glue_7t        0x22156544        0x0 load address 0x0a156544
+ .glue_7t       0x22156544        0x0 linker stubs
+
+.vfp11_veneer   0x22156544        0x0 load address 0x0a156544
+ .vfp11_veneer  0x22156544        0x0 linker stubs
+
+.v4_bx          0x22156544        0x0 load address 0x0a156544
+ .v4_bx         0x22156544        0x0 linker stubs
+
+.iplt           0x22156544        0x0 load address 0x0a156544
+ .iplt          0x22156544        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\ccWqLLmG.o
+
+.rel.dyn        0x22156544        0x0 load address 0x0a156544
+ .rel.iplt      0x22156544        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\ccWqLLmG.o
+
+.data           0x22156544        0x0 load address 0x0a156544
+ *(.data)
+ .data          0x22156544        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\ccWqLLmG.o
+
+.igot.plt       0x22156544        0x0 load address 0x0a156544
+ .igot.plt      0x22156544        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\ccWqLLmG.o
+
+.bss            0x22156544        0x0 load address 0x0a156544
+                0x22156544                        __bss_start__ = .
+ *(.bss)
+ .bss           0x22156544        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\ccWqLLmG.o
+                0x22156544                        __bss_end__ = .
+
+.stack          0x10000000      0x400
+                0x10000400                        . = (. + _Min_Stack_Size)
+ *fill*         0x10000000      0x400 
+OUTPUT(firmware.elf elf32-littlearm)
+LOAD linker stubs
+
+.comment        0x00000000       0x45
+ .comment       0x00000000       0x45 C:\Users\YASHWA~1\AppData\Local\Temp\ccWqLLmG.o
+                                 0x46 (size before relaxing)
+
+.ARM.attributes
+                0x00000000       0x2e
+ .ARM.attributes
+                0x00000000       0x2e C:\Users\YASHWA~1\AppData\Local\Temp\ccWqLLmG.o

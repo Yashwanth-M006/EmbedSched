@@ -1,0 +1,7 @@
+project6_blocking_isr/src/main.c:14:6:TIM3_IRQHandler	40	static
+project6_blocking_isr/src/main.c:52:6:main	16	static
+project6_blocking_isr/src/main.c:8:6:system_init	16	static
+project6_blocking_isr/src/main.c:11:6:uart_init	16	static
+project6_blocking_isr/hal_stubs/stm32f4xx_hal_cortex.c:82:6:HAL_GetTick	16	static
+project6_blocking_isr/hal_stubs/stm32f4xx_hal_cortex.c:91:6:HAL_Delay	32	static
+project6_blocking_isr/hal_stubs/stm32f4xx_hal_uart.c:142:6:HAL_UART_Transmit	48	static

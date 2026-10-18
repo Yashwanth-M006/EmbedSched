@@ -1,0 +1,49 @@
+{
+  "chip": "stm32f407.yaml",
+  "cores": [
+    { "id": 0, "algorithm": "RM", "preemptive": true },
+    { "id": 1, "algorithm": "RM", "preemptive": true }
+  ],
+  "tasks": [
+    {
+      "name": "Task_Core0_Alpha",
+      "entry_function": "task_core0_alpha",
+      "period_ms": 10,
+      "deadline_ms": 10,
+      "priority": 1,
+      "core": 0,
+      "resources": ["mutex_A", "mutex_B"]
+    },
+    {
+      "name": "Task_Core1_Beta",
+      "entry_function": "task_core1_beta",
+      "period_ms": 20,
+      "deadline_ms": 20,
+      "priority": 1,
+      "core": 1,
+      "resources": ["mutex_B", "mutex_A"]
+    }
+  ],
+  "resources": [
+    {
+      "name": "mutex_A",
+      "type": "mutex",
+      "accessed_by": ["Task_Core0_Alpha", "Task_Core1_Beta"],
+      "acquisition_order": {
+        "Task_Core0_Alpha": 1,
+        "Task_Core1_Beta": 2
+      },
+      "critical_section_us": 500
+    },
+    {
+      "name": "mutex_B",
+      "type": "mutex",
+      "accessed_by": ["Task_Core0_Alpha", "Task_Core1_Beta"],
+      "acquisition_order": {
+        "Task_Core0_Alpha": 2,
+        "Task_Core1_Beta": 1
+      },
+      "critical_section_us": 500
+    }
+  ]
+}

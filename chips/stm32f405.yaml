@@ -1,0 +1,47 @@
+name: STM32F405
+core: cortex-m4
+clock_max_mhz: 168
+
+cache:
+  present: false
+  line_bytes: 0
+
+memory_regions:
+  CCM:
+    origin: 0x10000000
+    size_kb: 64
+    wait_states: 0
+    bus_port: CCM
+    dma_accessible: false
+  SRAM1:
+    origin: 0x20000000
+    size_kb: 112
+    wait_states: 0
+    bus_port: AHB_S1
+    dma_accessible: true
+  SRAM2:
+    origin: 0x2001C000
+    size_kb: 16
+    wait_states: 0
+    bus_port: AHB_S2
+    dma_accessible: true
+  FLASH:
+    origin: 0x08000000
+    size_kb: 1024
+    bus_port: FLASH
+    dma_accessible: false
+
+flash_wait_states:
+  - { freq_max_mhz: 30,  ws: 0 }
+  - { freq_max_mhz: 60,  ws: 1 }
+  - { freq_max_mhz: 90,  ws: 2 }
+  - { freq_max_mhz: 120, ws: 3 }
+  - { freq_max_mhz: 150, ws: 4 }
+  - { freq_max_mhz: 168, ws: 5 }
+
+exception_entry_cycles: 12
+
+bus_matrix:
+  contending_pairs:
+    - masters: [CPU, DMA1, DMA2]
+      slave: AHB_S1

@@ -1,0 +1,52 @@
+{
+  "chip": "stm32f407.yaml",
+  "cores": [
+    {
+      "id": 0,
+      "algorithm": "RM",
+      "preemptive": true
+    }
+  ],
+  "tasks": [
+    {
+      "name": "Task_A",
+      "entry_function": "task_a",
+      "period_ms": 7,
+      "deadline_ms": 7,
+      "priority": 1,
+      "core": 0
+    },
+    {
+      "name": "Task_B",
+      "entry_function": "task_b",
+      "period_ms": 11,
+      "deadline_ms": 11,
+      "priority": 2,
+      "core": 0
+    },
+    {
+      "name": "Task_C",
+      "entry_function": "task_c",
+      "period_ms": 13,
+      "deadline_ms": 13,
+      "priority": 3,
+      "core": 0
+    },
+    {
+      "name": "Task_D",
+      "entry_function": "task_d",
+      "period_ms": 17,
+      "deadline_ms": 17,
+      "priority": 4,
+      "core": 0
+    },
+    {
+      "name": "Task_E",
+      "entry_function": "task_e",
+      "period_ms": 19,
+      "deadline_ms": 19,
+      "priority": 5,
+      "core": 0
+    }
+  ]
+}

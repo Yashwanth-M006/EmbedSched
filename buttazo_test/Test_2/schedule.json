@@ -1,0 +1,36 @@
+{
+  "chip": "buttazo_test/Test_2/stm32f407.yaml",
+  "cores": [{ "id": 0, "algorithm": "RM", "preemptive": true }],
+  "resource_protocol": "PCP",
+  "resources": [],
+  "tasks": [
+    {
+      "name": "tau1",
+      "entry_function": "task1",
+      "period_ms": 7,
+      "deadline_ms": 7,
+      "core": 0,
+      "priority": 1,
+      "resources": []
+    },
+    {
+      "name": "tau2",
+      "entry_function": "task2",
+      "period_ms": 12,
+      "deadline_ms": 12,
+      "core": 0,
+      "priority": 2,
+      "resources": []
+    },
+    {
+      "name": "tau3",
+      "entry_function": "task3",
+      "period_ms": 20,
+      "deadline_ms": 20,
+      "core": 0,
+      "priority": 3,
+      "resources": []
+    }
+  ],
+  "inter_core_channels": []
+}

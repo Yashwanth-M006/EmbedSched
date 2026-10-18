@@ -1,0 +1,78 @@
+{
+  "_source": "VESC BLDC motor controller v6.x — STM32F405RG at 168MHz",
+  "_repo": "https://github.com/vedderb/bldc",
+  "_rtos": "ChibiOS RTOS — threads mapped to fixed-priority preemptive tasks",
+  "_warning": "VESC uses ChibiOS threads; the 20kHz FOC current loop is interrupt-driven (ADC injection vector) modeled as priority 0 task.",
+
+  "chip": "chips/stm32f405.yaml",
+  "firmware_freq_mhz": 168,
+
+  "cores": [
+    {
+      "id": 0,
+      "algorithm": "RM",
+      "preemptive": true
+    }
+  ],
+
+  "resource_protocol": "PCP",
+  "resources": [],
+
+  "tasks": [
+    {
+      "name": "Task_MCInterface",
+      "entry_function": "stat_thread",
+      "period_ms": 10.0,
+      "_period_source": "chThdSleepMilliseconds(10) in mc_interface stat_thread",
+      "deadline_ms": 10.0,
+      "core": 0,
+      "priority": 1,
+      "_chibios_priority": "NORMALPRIO"
+    },
+    {
+      "name": "Task_Periodic",
+      "entry_function": "periodic_thread",
+      "period_ms": 10.0,
+      "_period_source": "chThdSleepMilliseconds(10) in main.c periodic_thread",
+      "deadline_ms": 10.0,
+      "core": 0,
+      "priority": 2,
+      "_chibios_priority": "NORMALPRIO"
+    },
+    {
+      "name": "Task_Timeout",
+      "entry_function": "timeout_thread",
+      "period_ms": 10.0,
+      "_period_source": "chThdSleepMilliseconds(10) in timeout_thread (IWDG reload window)",
+      "deadline_ms": 10.0,
+      "core": 0,
+      "priority": 3,
+      "_chibios_priority": "NORMALPRIO"
+    },
+    {
+      "name": "Task_Commands",
+      "entry_function": "packet_process_thread",
+      "period_ms": 10.0,
+      "_period_source": "chEvtWaitAnyTimeout(ALL_EVENTS, ST2MS(10)) in app_uartcomm.c",
+      "deadline_ms": 10.0,
+      "core": 0,
+      "priority": 4,
+      "_chibios_priority": "NORMALPRIO"
+    }
+  ],
+
+  "isrs": [
+    {
+      "name": "Task_FOC_ISR",
+      "entry_function": "mcpwm_foc_adc_int_handler",
+      "period_ms": 0.05,
+      "_period_source": "20kHz PWM switching frequency — ADC ISR executes every 50us",
+      "deadline_ms": 0.05,
+      "core": 0,
+      "priority": 0,
+      "_note": "Highest priority hardware interrupt driving the FOC current loop"
+    }
+  ],
+
+  "inter_core_channels": []
+}

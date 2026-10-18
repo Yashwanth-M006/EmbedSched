@@ -1,0 +1,51 @@
+{
+  "chip": "Test_SUITE_2/Test_4/stm32f407.yaml",
+  "cores": [{ "id": 0, "algorithm": "RM", "preemptive": true }],
+  "resource_protocol": "PCP",
+  "resources": [
+    {
+      "name": "mutex_spi",
+      "type": "mutex",
+      "protocol": "PCP",
+      "accessed_by": ["Task_H", "Task_L"],
+      "max_critical_section_ms": 3.0
+    },
+    {
+      "name": "mutex_i2c",
+      "type": "mutex",
+      "protocol": "PCP",
+      "accessed_by": ["Task_M", "Task_L"],
+      "max_critical_section_ms": 4.5
+    }
+  ],
+  "tasks": [
+    {
+      "name": "Task_H",
+      "entry_function": "task_h",
+      "period_ms": 10,
+      "deadline_ms": 10,
+      "core": 0,
+      "priority": 1,
+      "resources": ["mutex_spi"]
+    },
+    {
+      "name": "Task_M",
+      "entry_function": "task_m",
+      "period_ms": 20,
+      "deadline_ms": 20,
+      "core": 0,
+      "priority": 2,
+      "resources": ["mutex_i2c"]
+    },
+    {
+      "name": "Task_L",
+      "entry_function": "task_l",
+      "period_ms": 40,
+      "deadline_ms": 40,
+      "core": 0,
+      "priority": 3,
+      "resources": ["mutex_spi", "mutex_i2c"]
+    }
+  ],
+  "inter_core_channels": []
+}

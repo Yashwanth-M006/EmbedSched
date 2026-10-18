@@ -1,0 +1,151 @@
+Archive member included to satisfy reference by file (symbol)
+
+Memory Configuration
+
+Name             Origin             Length             Attributes
+FLASH            0x0000000008000000 0x0000000000100000 xr
+RAM              0x0000000020000000 0x0000000000020000 xrw
+
+Linker script and memory map
+
+                0x0000000008000000                . = 0x8000000
+
+.isr_vector     0x0000000008000000       0xb8
+                0x0000000008000000                . = ALIGN (0x4)
+ *(.isr_vector)
+ .isr_vector    0x0000000008000000       0xb8 project7_fragmented_flash/build/startup.o
+                0x0000000008000000                __isr_vector
+
+.text           0x0000000008000100      0x7da
+                0x0000000008000100                . = ALIGN (0x4)
+ *(.text)
+ *(.text*)
+ .text.Reset_Handler
+                0x0000000008000100       0x1c project7_fragmented_flash/build/startup.o
+                0x0000000008000100                Reset_Handler
+ .text.NMI_Handler
+                0x000000000800011c        0x4 project7_fragmented_flash/build/startup.o
+                0x000000000800011c                NMI_Handler
+ .text.HardFault_Handler
+                0x0000000008000120        0x4 project7_fragmented_flash/build/startup.o
+                0x0000000008000120                HardFault_Handler
+ .text.MemManage_Handler
+                0x0000000008000124        0x4 project7_fragmented_flash/build/startup.o
+                0x0000000008000124                MemManage_Handler
+ .text.BusFault_Handler
+                0x0000000008000128        0x4 project7_fragmented_flash/build/startup.o
+                0x0000000008000128                BusFault_Handler
+ .text.system_init
+                0x000000000800012c       0x10 project7_fragmented_flash/build/main.o
+                0x000000000800012c                system_init
+ .text.uart_init
+                0x000000000800013c       0x10 project7_fragmented_flash/build/main.o
+                0x000000000800013c                uart_init
+
+                                        /* GAP: 0x130 → 0x1000 (0xED0 bytes unused) */
+
+ .text.main     0x0000000008001000      0x44 project7_fragmented_flash/build/main.o
+                0x0000000008001000                main
+ .text.main_loop
+                0x0000000008001044       0x0c project7_fragmented_flash/build/main.o
+                0x0000000008001044                main_loop
+ .text.idle_task
+                0x0000000008001050       0x0a project7_fragmented_flash/build/main.o
+                0x0000000008001050                idle_task
+ .text.config_sensor
+                0x000000000800105c       0x18 project7_fragmented_flash/build/main.o
+                0x000000000800105c                config_sensor
+ .text.calibrate_sensor
+                0x0000000008001074       0x1c project7_fragmented_flash/build/main.o
+                0x0000000008001074                calibrate_sensor
+ .text.temp_sensor_init
+                0x0000000008001090       0x0a project7_fragmented_flash/build/main.o
+                0x0000000008001090                temp_sensor_init
+ .text.humidity_sensor_init
+                0x000000000800109a       0x0a project7_fragmented_flash/build/main.o
+                0x000000000800109a                humidity_sensor_init
+ .text.pressure_sensor_init
+                0x00000000080010a4       0x0a project7_fragmented_flash/build/main.o
+                0x00000000080010a4                pressure_sensor_init
+ .text.read_adc
+                0x00000000080010ae       0x0a project7_fragmented_flash/build/main.o
+                0x00000000080010ae                read_adc
+
+                                        /* GAP: 0x10B8 → 0x1400 (0x348 bytes unused) */
+
+ .text.filter_data
+                0x0000000008001400       0x08 project7_fragmented_flash/build/main.o
+                0x0000000008001400                filter_data
+ .text.apply_calibration
+                0x0000000008001408       0x08 project7_fragmented_flash/build/main.o
+                0x0000000008001408                apply_calibration
+
+                                        /* GAP: 0x1410 → 0x15C0 (0x1B0 bytes unused) */
+
+ .text.sensor_read
+                0x00000000080015c0       0x20 project7_fragmented_flash/build/main.o
+                0x00000000080015c0                sensor_read
+
+                                        /* GAP: 0x15E0 → 0x2800 (0x1220 bytes unused) */
+
+ .text.uart_tx  0x0000000008002800       0x50 project7_fragmented_flash/build/main.o
+                0x0000000008002800                uart_tx
+ .text.uart_rx  0x0000000008002850       0x30 project7_fragmented_flash/build/main.o
+                0x0000000008002850                uart_rx
+ .text.uart_flush
+                0x0000000008002880       0x08 project7_fragmented_flash/build/main.o
+                0x0000000008002880                uart_flush
+ .text.uart_set_baudrate
+                0x0000000008002888       0x08 project7_fragmented_flash/build/main.o
+                0x0000000008002888                uart_set_baudrate
+ .text.error_handler
+                0x0000000008002890       0x08 project7_fragmented_flash/build/main.o
+                0x0000000008002890                error_handler
+ .text.log_event
+                0x0000000008002898       0x08 project7_fragmented_flash/build/main.o
+                0x0000000008002898                log_event
+ .text.get_timestamp
+                0x00000000080028a0       0x08 project7_fragmented_flash/build/main.o
+                0x00000000080028a0                get_timestamp
+ .text.format_data
+                0x00000000080028a8       0x08 project7_fragmented_flash/build/main.o
+                0x00000000080028a8                format_data
+
+.rodata         0x00000000080028b0        0x0
+                0x00000000080028b0                . = ALIGN (0x4)
+
+.data           0x0000000020000000        0x0
+                0x0000000020000000                . = ALIGN (0x4)
+                0x0000000020000000                _sdata = .
+                0x0000000020000000                _edata = .
+
+.bss            0x0000000020000000       0xa0
+                0x0000000020000000                . = ALIGN (0x4)
+                0x0000000020000000                _sbss = .
+ *(.bss)
+ *(.bss*)
+ .bss           0x0000000020000000        0x4 project7_fragmented_flash/build/main.o
+                0x0000000020000000                sensor_state
+ .bss           0x0000000020000004        0x4 project7_fragmented_flash/build/main.o
+                0x0000000020000004                uart_state
+ .bss           0x0000000020000008       0x98 project7_fragmented_flash/build/main.o
+                0x0000000020000008                tx_buffer
+                0x00000000200000a0                _ebss = .
+                0x00000000200000a0                __bss_end__ = .
+
+._stack         0x0000000020015800      0x400
+                0x0000000020015800                . = ALIGN (0x8)
+                0x0000000020015800                __stack_start = .
+                                                  *fill*   0x0000000020015800      0x400 00
+                0x0000000020015c00                . = (. + _Min_Stack_Size)
+                0x0000000020015c00                __stack_end = .
+                0x0000000020015c00                . = ALIGN (0x8)
+
+                0x0000000020000000                PROVIDE (__stack = .)
+                0x000000002001c000                _estack = 0x2001c000
+                0x0000000000000400                _Min_Stack_Size = 0x400
+                0x0000000020015800                __stack_start
+                0x0000000020015c00                __stack_end
+                0x00000000200000a0                __bss_end__
+
+PROVIDE (__stack = .)

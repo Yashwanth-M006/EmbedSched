@@ -1,0 +1,33 @@
+{
+  "chip": "stm32f407.yaml",
+  "cores": [
+    {
+      "id": 0,
+      "algorithm": "EDF",
+      "preemptive": true
+    }
+  ],
+  "tasks": [
+    {
+      "name": "Task_A",
+      "entry_function": "task_a",
+      "period_ms": 10,
+      "deadline_ms": 8,
+      "core": 0
+    },
+    {
+      "name": "Task_B",
+      "entry_function": "task_b",
+      "period_ms": 20,
+      "deadline_ms": 15,
+      "core": 0
+    },
+    {
+      "name": "Task_C",
+      "entry_function": "task_c",
+      "period_ms": 40,
+      "deadline_ms": 30,
+      "core": 0
+    }
+  ]
+}

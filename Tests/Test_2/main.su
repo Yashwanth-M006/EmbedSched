@@ -1,0 +1,12 @@
+src/main.c:126:6:DMA2_Stream0_IRQHandler	4	static
+src/main.c:134:6:TIM2_IRQHandler	4	static
+src/main.c:142:6:USART1_IRQHandler	16	static
+src/main.c:158:13:system_init	16	static
+src/main.c:180:13:uart_init	32	static
+src/main.c:204:13:uart_tx_byte	24	static
+src/main.c:215:17:adc_sample	16	static
+src/main.c:236:17:crc_compute	32	static
+src/main.c:263:13:sensor_read	48	static
+src/main.c:292:13:process_frame	64	static
+src/main.c:341:13:main_loop	32	static
+src/main.c:376:5:main	16	static

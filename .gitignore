@@ -1,0 +1,68 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions & intermediate build objects
+*.so
+*.o
+*.obj
+*.dep
+*.d
+build/
+**/build/
+
+# LaTeX sources and compilation artifacts
+main.tex
+*.tex
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+*.toc
+*.pdf
+
+# Scratch notes, reference texts, and context dumps
+reference.txt
+TECHNICAL_REFERENCE.txt
+*reference*.txt
+project_explanation.txt
+firmware_analyzer_context.md
+results.md
+run_test8.py
+firmasched_arxiv.md
+
+# External upstream benchmark repositories
+benchmark_projects/
+
+# Distribution / packaging
+dist/
+*.egg-info/
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.pytest_cache/
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# OS and Editor files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+.vscode/
+.idea/
+
+# Renode simulation / execution tracing outputs
+exec_trace*.txt
+sim.resc

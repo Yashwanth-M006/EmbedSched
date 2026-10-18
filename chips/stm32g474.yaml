@@ -1,0 +1,40 @@
+name: STM32G474
+core: cortex-m4
+clock_max_mhz: 170
+
+cache:
+  present: false
+  line_bytes: 0
+
+memory_regions:
+  CCM:
+    origin: 0x10000000
+    size_kb: 32
+    wait_states: 0
+    bus_port: CCM
+    dma_accessible: false
+  SRAM1:
+    origin: 0x20000000
+    size_kb: 96
+    wait_states: 0
+    bus_port: AHB_S1
+    dma_accessible: true
+  FLASH:
+    origin: 0x08000000
+    size_kb: 512
+    bus_port: FLASH
+    dma_accessible: false
+
+flash_wait_states:
+  - { freq_max_mhz: 34,  ws: 0 }
+  - { freq_max_mhz: 68,  ws: 1 }
+  - { freq_max_mhz: 102, ws: 2 }
+  - { freq_max_mhz: 136, ws: 3 }
+  - { freq_max_mhz: 170, ws: 4 }
+
+exception_entry_cycles: 12
+
+bus_matrix:
+  contending_pairs:
+    - masters: [CPU, DMA1, DMA2]
+      slave: AHB_S1

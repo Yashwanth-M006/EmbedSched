@@ -1,0 +1,245 @@
+# expected_output.txt — Project 3: recursive_isr
+#
+# Run command:
+#   python main.py \
+#     --elf     project3_recursive_isr/build/firmware.elf \
+#     --map     project3_recursive_isr/build/firmware.map \
+#     --ld      project3_recursive_isr/stm32f407_recursive.ld \
+#     --chip    project3_recursive_isr/chips/stm32f407.yaml \
+#     --su-dir  project3_recursive_isr/su \
+#     --startup project3_recursive_isr/src/startup.s \
+#     --freq-mhz 168
+#
+# ══════════════════════════════════════════════════════════════════════
+
+OVERALL SCORE: 25 / 100
+  Deductions:
+    recursion_detected  (-30)  USART1_IRQHandler ISR chain
+    isr_in_flash        (-15)  USART1_IRQHandler in Flash (no ITCM on F407)
+    stack_not_in_ccm    ( -0)  INFO only — CCM available but stack in SRAM1
+
+# ══════════════════════════════════════════════════════════════════════
+# SECTION A: MUST FIRE
+# ══════════════════════════════════════════════════════════════════════
+
+[CRITICAL] [STATIC] recursion_detected
+  ────────────────────────────────────────────────────────────────────
+  ISR root     : USART1_IRQHandler (vector table position 53, startup.s)
+  ISR address  : 0x080001EC  (Flash — F407 has no ITCM)
+  Recursion at : parse_packet (0x08000334)
+                 Self-call via bl at 0x080003BC → 0x08000334
+
+  Full path from ISR to recursion:
+    USART1_IRQHandler  (0x080001EC)  frame=16B
+      → uart_rx_dispatch (0x0800041C)  frame=24B
+           → checksum_verify (0x08000238)  frame=32B  [leaf, no recursion]
+           → parse_packet    (0x08000334)  frame=72B
+                → emit_token  (0x080002D8)  frame=24B  [leaf]
+                → parse_packet (0x08000334)  ← BACK-EDGE (self-call)
+                    → parse_packet ...        ← unbounded
+
+  Stack consumption analysis:
+    Depth 0 (top-level call from uart_rx_dispatch):
+      USART1_IRQHandler(16) + uart_rx_dispatch(24) + parse_packet(72) = 112B
+    Depth 1 (first recursive call):
+      112B + parse_packet(72) = 184B
+    Depth N:
+      112B + N × 72B
+    Overflow at depth:
+      (1024 - 112) / 72 = ~12 recursive calls → HardFault
+
+  _Min_Stack_Size = 1024 bytes (0x400) — cannot guarantee safety.
+  Stack is UNBOUNDED. Worst case depends entirely on runtime input.
+
+  Required message elements:
+    1. Name the ISR: USART1_IRQHandler
+    2. Name the recursive function: parse_packet
+    3. Show the full call path from ISR to back-edge
+    4. State stack is UNBOUNDED
+    5. Show overflow threshold: ~12 calls on 1024B stack
+    6. Suggest fix: add depth limit guard in parse_packet
+
+  What this tests in the analyzer:
+    - call_graph.py: DFS back-edge detection (visited set logic)
+    - call_graph.py: bl at 0x080003BC target == parse_packet start = self-call
+    - stack_analyzer.py: returning has_recursion=True halts bounded computation
+    - rules/stack_risk.py: recursion → CRITICAL (not just WARNING)
+    - Must trace ISR → intermediate function → recursive function
+      (not just direct ISR self-recursion)
+  ────────────────────────────────────────────────────────────────────
+
+[WARNING] [CALCULATED] isr_in_flash
+  Handler : USART1_IRQHandler
+  Address : 0x080001EC  (Flash range [0x08000000, 0x08100000))
+  Chip    : STM32F407 — no ITCM present
+
+  Required message:
+    USART1_IRQHandler at 0x080001EC is in Flash.
+    STM32F407 has no ITCM — all code executes from Flash via AHB.
+    Recommend: verify ART accelerator enabled (FLASH_ACR bit 9).
+    Recommend: verify prefetch enabled (FLASH_ACR bit 8).
+    Calculated entry latency: ~89 ns at 168MHz/5WS
+    (12 cy hw entry + 8 cy fetch × 4 cy/cycle = ~(12+8)×5.95 ns ≈ 119 ns)
+    Note: ART reduces sequential latency but NOT cold-entry ISR jitter.
+
+  What this tests:
+    - Chip profile correctly shows no ITCM key
+    - Rule 1 correctly fires on F407 with isr_in_flash
+    - Rule 1 does NOT recommend ITCM (chip doesn't have it)
+
+[INFO] [STATIC] stack_not_in_ccm
+  Stack top : _estack = 0x2001C000 → SRAM1 range [0x20000000, 0x2001C000)
+  Stack base: __stack_start = 0x20000120 → SRAM1
+  CCM       : 0x10000000–0x1000FFFF (64KB, CPU-only, zero wait state)
+
+  Required message:
+    Stack is in SRAM1 (AHB_S0). CCM available at 0x10000000 (64KB).
+    CCM is CPU-only — stack accesses cannot contend with DMA on AHB.
+    Consider moving .stack section to CCM for better isolation.
+    (Primary issue is recursion — this is a secondary placement concern.)
+
+# ══════════════════════════════════════════════════════════════════════
+# SECTION B: MUST NOT FIRE
+# ══════════════════════════════════════════════════════════════════════
+
+[B1] MUST NOT fire: recursion_detected for TIM2_IRQHandler
+  Why: TIM2_IRQHandler → tick_update (leaf). No back-edges.
+       Call graph for TIM2 path is a strict DAG.
+  If fires → BUG: recursion state leaking between ISR path analyses,
+                  or DFS visited set not reset between root calls.
+
+[B2] MUST NOT fire: recursion_detected for checksum_verify
+  Why: checksum_verify has an inner for-loop compiled to 'b' (branch),
+       not 'bl' (call). The analyzer must only follow 'bl'/'blx'.
+       The loop body contains 'adds', 'ldr', 'str', 'b.n' — no 'bl'.
+  Verify:
+    arm-none-eabi-objdump -d build/firmware.elf |
+      awk '/<checksum_verify>:/{p=1} p && /bl /{print} p && /^$/{p=0}'
+    Expected: empty output (no bl instructions in checksum_verify)
+  If fires → BUG: b/bl confusion in call_graph.py (same as Project 1)
+
+[B3] MUST NOT fire: stack_overflow_risk for TIM2_IRQHandler chain
+  Why: TIM2 chain = TIM2_IRQHandler(8) + tick_update(16) = 24B
+       Budget = 1024B. Usage = 2.3%. Clean bounded chain.
+  If fires → BUG: threshold wrong, or TIM2 incorrectly inheriting
+                  USART1's recursion flag.
+
+[B4] MUST NOT fire: recursion_detected for main call chain
+  Why: main → system_init (leaf), uart_init (leaf), idle_task (leaf)
+       No cycles anywhere in main's reachable subgraph.
+  If fires → BUG: global recursion detection polluting per-chain analysis.
+
+[B5] MUST NOT fire: unaligned_dma_buffer
+  Why: No DMA buffers defined in this project. g_rx_buf is a plain
+       static array in .bss — not in a .dma_buffers section.
+       Rule 5 only fires on symbols in DMA-designated sections.
+  If fires → BUG: Rule 5 treating all arrays as DMA buffers.
+
+# ══════════════════════════════════════════════════════════════════════
+# SECTION C: THE DISASSEMBLY PROOF
+# ══════════════════════════════════════════════════════════════════════
+
+The analyzer's call graph must find this specific instruction:
+
+  Address : 0x080003BC
+  Encoding: f7ff ffba  (32-bit Thumb-2 BL instruction)
+  Decodes : bl  0x08000334 <parse_packet>
+  Context : Inside <parse_packet> function body
+  Meaning : parse_packet calls parse_packet → BACK-EDGE
+
+How to verify manually:
+  arm-none-eabi-objdump -d build/firmware.elf | grep -A1 "80003bc"
+  Expected: 80003bc: f7ff ffba   bl  8000334 <parse_packet>
+
+How your call_graph.py must handle this:
+  def build_call_graph(elf_path):
+      ...
+      for line in disassembly:
+          if in_function 'parse_packet':
+              if match bl/blx:
+                  callee = extract_target_name(line)   # 'parse_packet'
+                  call_graph['parse_packet'].add('parse_packet')  # self-edge
+
+  def dfs(func, call_graph, stack_usage, visited):
+      if func in visited:
+          return (0, [], True)   # ← BACK-EDGE DETECTED, has_recursion=True
+      visited.add(func)
+      ...
+
+# ══════════════════════════════════════════════════════════════════════
+# SECTION D: MEMORY MAP
+# ══════════════════════════════════════════════════════════════════════
+
+MEMORY MAP:
+  FLASH  : 1,572 bytes / 1,048,576 bytes (0.2%)
+  SRAM1  : 1,824 bytes total
+             .data  : 8 bytes
+             .bss   : 1,816 bytes  (g_rx_buf[256] dominates)
+             .stack : 1,024 bytes  (in SRAM1 — suboptimal, CCM available)
+  CCM    : 0 bytes  (available but unused — stack not here)
+
+Key symbols (from firmware.map):
+  USART1_IRQHandler : 0x080001EC  Flash
+  TIM2_IRQHandler   : 0x08000168  Flash
+  uart_rx_dispatch  : 0x0800041C  Flash
+  parse_packet      : 0x08000334  Flash (recursive — 0x080003BC self-calls back)
+  checksum_verify   : 0x08000238  Flash (leaf — inner loop uses 'b', not 'bl')
+  emit_token        : 0x080002D8  Flash (leaf)
+  tick_update       : 0x0800020C  Flash (leaf)
+  __stack_start     : 0x20000120  SRAM1 (not CCM)
+  __stack_end       : 0x20000520
+  _Min_Stack_Size   : 0x400       (1024 bytes)
+  __bss_end__       : 0x20000120
+
+# ══════════════════════════════════════════════════════════════════════
+# SECTION E: STACK USAGE (.su)
+# ══════════════════════════════════════════════════════════════════════
+
+STACK USAGE (from su/main.su):
+  TIM2_IRQHandler     :  8B  static
+  USART1_IRQHandler   : 16B  static
+  tick_update         : 16B  static
+  checksum_verify     : 32B  static
+  emit_token          : 24B  static
+  parse_packet        : 72B  static   ← per frame; unbounded call count
+  uart_rx_dispatch    : 24B  static
+  system_init         : 16B  static
+  uart_init           : 24B  static
+  idle_task           : 16B  static
+  main                : 16B  static
+
+Bounded chains (no recursion):
+  TIM2: TIM2_IRQHandler(8) + tick_update(16) = 24B / 1024B = 2.3%  PASS
+  main: main(16) + uart_init(24) = 40B / 1024B = 3.9%  PASS
+
+Unbounded chain (recursion):
+  USART1: 16 + 24 + 72 + 72×N = 112 + 72N  UNBOUNDED  CRITICAL
+
+# ══════════════════════════════════════════════════════════════════════
+# SECTION F: PASS CRITERIA CHECKLIST
+# ══════════════════════════════════════════════════════════════════════
+
+  [ ] Score: 25/100 (or adjusted per your scoring weights)
+  [ ] recursion_detected CRITICAL fires for USART1_IRQHandler chain
+  [ ] Recursion path shown: USART1→uart_rx_dispatch→parse_packet→parse_packet
+  [ ] isr_in_flash WARNING fires for USART1_IRQHandler (Flash, F407)
+  [ ] stack_not_in_ccm INFO fires (stack in SRAM1, CCM available)
+  [ ] recursion_detected does NOT fire for TIM2_IRQHandler chain
+  [ ] recursion_detected does NOT fire for checksum_verify (inner loop ≠ recursion)
+  [ ] recursion_detected does NOT fire for main chain
+  [ ] stack_overflow_risk does NOT fire for TIM2 or main chains
+  [ ] Tool does not crash on encountering recursive call graph
+  [ ] Tool correctly halts DFS on back-edge (does not infinite-loop)
+
+FAILURE TRIAGE:
+  Tool infinite-loops or crashes → DFS visited set not passed correctly;
+    check that visited is a set copy per branch, not a shared mutable set
+  recursion_detected fires for TIM2 → visited set shared across root calls;
+    reset visited = set() for each ISR entry point
+  recursion_detected fires for checksum_verify → treating 'b' as 'bl';
+    regex must match only 'bl ' and 'blx ' not 'b.n', 'bne', 'bls', etc.
+  recursion_detected does NOT fire → bl instruction pattern not matched;
+    check: r'^\s+[0-9a-f]+:\s+[0-9a-f ]+\tbl\s+[0-9a-f]+ <(\S+)>'
+    Note the tab character before 'bl' in objdump output
+  Wrong path shown → call_graph traversal not tracking parent chain;
+    DFS must return the full path, not just the back-edge node

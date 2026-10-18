@@ -1,0 +1,78 @@
+# stm32f4xx_hal.map
+# Partial HAL symbol classification map for STM32F4xx HAL library.
+# Used by the Firmware Efficiency Analyzer to identify blocking vs.
+# non-blocking HAL calls without needing the full HAL source.
+#
+# Format:
+#   SECTION: <section_name>
+#   <symbol_name>  <address_hint>  <classification>  <notes>
+#
+# Classifications:
+#   BLOCKING     — spins on a hardware register or SysTick; unsafe in ISR
+#   NON_BLOCKING — returns immediately; safe in ISR
+#   ASYNC        — sets up DMA/IT; safe in ISR; completion via callback
+#   UNKNOWN      — not yet classified
+#
+# -----------------------------------------------------------------------
+
+SECTION: BLOCKING
+# These functions poll hardware status registers or busy-wait on SysTick.
+# Calling them from an ISR risks deadlock or excessive hold time.
+
+HAL_Delay               0x08000208  BLOCKING  busy-wait on SysTick uwTick; deadlocks if SysTick <= caller priority
+HAL_UART_Transmit       0x08000248  BLOCKING  polls USART_SR_TXE and USART_SR_TC per byte; up to Timeout ms
+HAL_SPI_Transmit        0x00000000  BLOCKING  polls SR_TXE/BSY per byte
+HAL_SPI_Receive         0x00000000  BLOCKING  polls SR_RXNE per byte
+HAL_SPI_TransmitReceive 0x00000000  BLOCKING  polls SR_TXE+RXNE per byte
+HAL_I2C_Master_Transmit 0x00000000  BLOCKING  polls I2C SR1/SR2; hangs if bus stuck
+HAL_I2C_Master_Receive  0x00000000  BLOCKING  polls I2C SR1/SR2; hangs if bus stuck
+HAL_I2C_Slave_Transmit  0x00000000  BLOCKING  polls I2C SR1/SR2
+HAL_I2C_Slave_Receive   0x00000000  BLOCKING  polls I2C SR1/SR2
+HAL_ADC_PollForConversion 0x00000000 BLOCKING  busy-waits on ADC EOC flag
+HAL_CAN_Transmit        0x00000000  BLOCKING  polls CAN TSR_TME flag
+HAL_FLASH_Program       0x00000000  BLOCKING  polls FLASH SR BSY flag
+HAL_FLASH_Erase         0x00000000  BLOCKING  polls FLASH SR BSY; can take seconds
+HAL_RCC_OscConfig       0x00000000  BLOCKING  waits for oscillator ready flags
+
+SECTION: NON_BLOCKING
+# These functions read a register or variable and return immediately.
+# Safe to call from ISR context.
+
+HAL_GetTick             0x080001ec  NON_BLOCKING  reads uwTick variable; O(1)
+HAL_GPIO_ReadPin        0x00000000  NON_BLOCKING  reads GPIO IDR register; O(1)
+HAL_GPIO_WritePin       0x00000000  NON_BLOCKING  writes GPIO BSRR register; O(1)
+HAL_GPIO_TogglePin      0x00000000  NON_BLOCKING  writes GPIO ODR register; O(1)
+HAL_GetTickPrio         0x00000000  NON_BLOCKING  reads uwTickPrio variable; O(1)
+HAL_IncTick             0x00000000  NON_BLOCKING  increments uwTick; O(1); called from SysTick_Handler
+HAL_UART_GetState       0x00000000  NON_BLOCKING  reads UART handle state field; O(1)
+HAL_SPI_GetState        0x00000000  NON_BLOCKING  reads SPI handle state field; O(1)
+HAL_I2C_GetState        0x00000000  NON_BLOCKING  reads I2C handle state field; O(1)
+HAL_ADC_GetValue        0x00000000  NON_BLOCKING  reads ADC DR register; O(1)
+HAL_RCC_GetSysClockFreq 0x00000000  NON_BLOCKING  computes from RCC registers; O(1)
+HAL_RCC_GetHCLKFreq     0x00000000  NON_BLOCKING  returns SystemCoreClock; O(1)
+HAL_RCC_GetPCLK1Freq    0x00000000  NON_BLOCKING  reads APB1 prescaler; O(1)
+HAL_RCC_GetPCLK2Freq    0x00000000  NON_BLOCKING  reads APB2 prescaler; O(1)
+
+SECTION: ASYNC
+# These functions initiate DMA or interrupt-driven transfers and return
+# immediately. Completion is signalled via callback. Safe in ISR.
+
+HAL_UART_Transmit_IT    0x00000000  ASYNC  enables TXEIE; returns HAL_OK immediately
+HAL_UART_Receive_IT     0x00000000  ASYNC  enables RXNEIE; returns HAL_OK immediately
+HAL_UART_Transmit_DMA   0x00000000  ASYNC  configures DMA stream; returns HAL_OK immediately
+HAL_UART_Receive_DMA    0x00000000  ASYNC  configures DMA stream; returns HAL_OK immediately
+HAL_SPI_Transmit_IT     0x00000000  ASYNC  enables TXEIE; returns HAL_OK immediately
+HAL_SPI_Receive_IT      0x00000000  ASYNC  enables RXNEIE; returns HAL_OK immediately
+HAL_SPI_Transmit_DMA    0x00000000  ASYNC  configures DMA stream
+HAL_SPI_Receive_DMA     0x00000000  ASYNC  configures DMA stream
+HAL_I2C_Master_Transmit_IT 0x00000000 ASYNC  enables I2C interrupts
+HAL_I2C_Master_Receive_IT  0x00000000 ASYNC  enables I2C interrupts
+HAL_ADC_Start_IT        0x00000000  ASYNC  enables ADC EOCIE
+HAL_ADC_Start_DMA       0x00000000  ASYNC  configures DMA for ADC
+HAL_TIM_Base_Start_IT   0x00000000  ASYNC  enables TIM update interrupt; returns immediately
+
+SECTION: UNKNOWN
+# Symbols seen in HAL but not yet audited.
+
+HAL_PWR_EnterSTOPMode   0x00000000  UNKNOWN  may spin waiting for wakeup event
+HAL_PWR_EnterSLEEPMode  0x00000000  UNKNOWN  WFI/WFE — depends on sleep-on-exit flag

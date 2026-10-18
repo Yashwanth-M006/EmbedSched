@@ -1,0 +1,271 @@
+# expected_output.txt — Project 5: stack_bss_overlap
+#
+# Run command:
+#   python main.py \
+#     --elf     project5_stack_bss_overlap/build/firmware.elf \
+#     --map     project5_stack_bss_overlap/build/firmware.map \
+#     --ld      project5_stack_bss_overlap/buggy.ld \
+#     --chip    project5_stack_bss_overlap/chips/stm32f407.yaml \
+#     --su-dir  project5_stack_bss_overlap/su \
+#     --startup project5_stack_bss_overlap/src/startup.s \
+#     --freq-mhz 168
+#
+# ══════════════════════════════════════════════════════════════════════
+
+OVERALL SCORE: 45 / 100
+  Deductions:
+    stack_bss_zero_gap      (-30)  __stack_start immediately adjacent to __bss_end__
+    stack_declared_too_small(-25)  50% depth ratio with zero growth margin
+
+# ══════════════════════════════════════════════════════════════════════
+# SECTION A: MUST FIRE
+# ══════════════════════════════════════════════════════════════════════
+
+[CRITICAL] [STATIC] stack_bss_zero_gap
+  ────────────────────────────────────────────────────────────────────
+  __bss_end__   = 0x20009D78
+  __stack_start = 0x20009D78
+  Gap between end of .bss and start of .stack section = 0 bytes
+
+  The .stack section is placed IMMEDIATELY after .bss with no gap.
+  If ANY new global variable is added to the firmware (increasing .bss),
+  the linker CANNOT place the .stack section without overlapping .bss
+  or overflowing SRAM1. There is zero growth margin.
+
+  At runtime: the hardware SP starts at _estack (0x2001C000) and grows
+  DOWN freely — the hardware does not enforce the declared .stack section
+  boundary without MPU configuration. Stack growth below __stack_start
+  silently corrupts the end of .bss (g_log_buffer, g_event_ring).
+
+  Required message elements:
+    1. Show __bss_end__ and __stack_start are identical addresses
+    2. State gap = 0 bytes
+    3. Name the specific .bss symbols at risk of corruption
+       (those immediately before __bss_end__: g_proc_flags, g_sensor_cal)
+    4. State that MPU guard is not configured (no guard region in LD)
+    5. Suggest fix: increase _Min_Stack_Size OR move stack to CCM
+
+  What this tests in the analyzer:
+    - map_parser.py: extracting __bss_end__ and __stack_start symbols
+    - rules/stack_risk.py: computing gap = __stack_start - __bss_end__
+    - gap == 0 → CRITICAL (not just WARNING)
+    - Distinct from Project 4: here the stack section EXISTS and is
+      parsed correctly; the bug is the value, not the absence
+
+[WARNING] [STATIC] stack_declared_too_small
+  ────────────────────────────────────────────────────────────────────
+  _Min_Stack_Size  = 512 bytes (0x200, from buggy.ld)
+  Worst-case depth = 256 bytes (TIM3_IRQHandler chain, from .su)
+  Usage ratio      = 256 / 512 = 50.0%
+  Headroom         = 256 bytes (50.0%)
+
+  Worst-case call chain:
+    TIM3_IRQHandler  (16B)
+      → isr_log      (88B)
+           → pack_record  (152B)  ← deepest frame
+    Total: 16 + 88 + 152 = 256B
+
+  At 50% usage the declared budget appears to have margin,
+  but with zero BSS-to-stack gap (CRITICAL finding above),
+  any BSS growth reduces the usable .stack section.
+  If .bss grows by even 512 bytes, _Min_Stack_Size effectively
+  becomes 0 — the linker will pack .stack into whatever space
+  remains or fail entirely.
+
+  Secondary worst-case (main path):
+    main(16) + main_task(24) + signal_process(32) + apply_fir(136) = 208B
+
+  Combined ISR preemption scenario:
+    main path depth (208B) + ISR path depth (256B) = 464B
+    vs declared budget 512B → only 48B headroom under preemption
+
+  Required message elements:
+    1. _Min_Stack_Size = 512B, worst-case = 256B, ratio = 50.0%
+    2. Note zero-gap context makes 50% insufficient in practice
+    3. Show combined preemption scenario: 464B vs 512B
+    4. Recommend increasing _Min_Stack_Size to at least 1024B
+       AND moving stack to CCM to eliminate BSS adjacency risk
+
+[INFO] [STATIC] stack_not_in_ccm
+  __stack_start = 0x20009D78 → SRAM1 (AHB_S0, DMA-accessible)
+  CCM available at 0x10000000 (64KB, CPU-only, DMA-isolated)
+  Moving stack to CCM eliminates BSS adjacency risk entirely
+  and removes stack from AHB bus contention.
+
+[INFO] [CALCULATED] isr_in_flash
+  TIM3_IRQHandler at 0x0800xxxx → Flash (no ITCM on F407)
+  Recommend: verify ART accelerator (FLASH_ACR bit 9) enabled.
+  Entry latency: ~119 ns calculated at 168MHz/5WS.
+
+# ══════════════════════════════════════════════════════════════════════
+# SECTION B: MUST NOT FIRE
+# ══════════════════════════════════════════════════════════════════════
+
+[B1] MUST NOT fire: recursion_detected
+  Why: Call graph is a strict DAG. No function calls itself.
+       apply_fir and apply_iir both use inner 'b' loops, not 'bl'.
+       Verified: objdump shows no bl-to-self in any function.
+  If fires → BUG: b/bl confusion (same trap as Projects 1, 2, 3).
+
+[B2] MUST NOT fire: no_explicit_stack_section
+  Why: buggy.ld has an explicit .stack section with _Min_Stack_Size.
+       Both __stack_start and __stack_end are present in firmware.map.
+       _Min_Stack_Size = 0x200 is defined and parseable.
+       The bug is the VALUE, not the ABSENCE.
+       Project 5 ≠ Project 4. Tool must not confuse them.
+  If fires → BUG: ld_parser.py triggers absence fallback when section exists.
+
+[B3] MUST NOT fire: unaligned_dma_buffer
+  Why: No .dma_buffers section in buggy.ld.
+       All large arrays (g_adc_raw, g_fir_output, etc.) are in .bss.
+       Rule 5 only fires on symbols in DMA-designated sections.
+  If fires → BUG: Rule 5 treating all large arrays as DMA buffers.
+
+[B4] MUST NOT fire: itcm_overflow
+  Why: STM32F407 has no ITCM. No .itcm_text section in buggy.ld.
+  If fires → BUG: chip-agnostic ITCM check on F407 chip profile.
+
+# ══════════════════════════════════════════════════════════════════════
+# SECTION C: THE ADDRESS ARITHMETIC PROOF
+# ══════════════════════════════════════════════════════════════════════
+
+This is the computation your analyzer must perform:
+
+  Step 1 — parse buggy.ld:
+    _Min_Stack_Size = 0x200  (512 bytes)
+
+  Step 2 — parse firmware.map:
+    __bss_start__ = 0x20000014
+    __bss_end__   = 0x20009D78
+    __stack_start = 0x20009D78  ← same address
+    __stack_end   = 0x20009F78  (= __stack_start + 0x200)
+    _estack       = 0x2001C000  (SRAM1 top)
+
+  Step 3 — compute gap:
+    gap = __stack_start - __bss_end__
+        = 0x20009D78 - 0x20009D78
+        = 0 bytes  → CRITICAL
+
+  Step 4 — compute depth ratio:
+    worst_depth = max over all call chains from .su + call graph
+                = 256B (TIM3→isr_log→pack_record)
+    ratio = 256 / 512 = 50.0%
+    headroom = 256B
+    → WARNING (not CRITICAL alone — depth is bounded and < budget)
+
+  Step 5 — compute SRAM1 remaining:
+    __heap_end   = 0x2000A178
+    SRAM1 top    = 0x2001C000
+    Free after heap = 0x2001C000 - 0x2000A178 = 73,352 bytes
+    This space is the REAL runtime stack range — 143× larger than
+    the declared .stack section. The declared section is misleadingly
+    small relative to where the SP actually travels.
+
+  Step 6 — BSS symbols at overflow boundary:
+    The last symbols before __bss_end__ (at 0x20009D78):
+    These are whichever symbols GCC places last in .bss.
+    The analyzer should name them from the .map file to make
+    the corruption warning concrete and actionable.
+
+# ══════════════════════════════════════════════════════════════════════
+# SECTION D: MEMORY MAP
+# ══════════════════════════════════════════════════════════════════════
+
+MEMORY MAP (from arm-none-eabi-size + firmware.map):
+  FLASH    : 2,824 bytes / 1,048,576 bytes (0.3%)
+  SRAM1 breakdown:
+    .data   : 20 bytes     at 0x20000000
+    .bss    : 40,292 bytes at 0x20000014  (39.3 KB)
+              [g_adc_raw(8192) + g_fir_output(8192) + g_iir_output(8192)
+               + g_event_ring(8192) + g_log_buffer(4096) + g_fir_coeffs(1024)
+               + g_timestamp_buf(1024) + g_proc_flags(1024)
+               + g_iir_state(64) + g_sensor_cal(256) + misc(36)]
+    .stack  : 512 bytes    at 0x20009D78  (= __bss_end__ ← zero gap)
+    .heap   : 512 bytes    at 0x20009F78
+  Total used (link time) : 41,336 bytes / 114,688 bytes (36.0%)
+  Remaining SRAM1        : 73,352 bytes (after heap, before SRAM1 top)
+
+Key addresses:
+  _estack        = 0x2001C000  (SRAM1 top, initial SP)
+  __bss_end__    = 0x20009D78
+  __stack_start  = 0x20009D78  ← ZERO GAP FROM __bss_end__
+  __stack_end    = 0x20009F78
+  __heap_end     = 0x2000A178
+  _Min_Stack_Size= 0x200 (512 bytes)
+
+# ══════════════════════════════════════════════════════════════════════
+# SECTION E: STACK USAGE (.su)
+# ══════════════════════════════════════════════════════════════════════
+
+STACK USAGE (from su/main.su) — compiled with hard-float, O0:
+  TIM3_IRQHandler   :  16B  static
+  pack_record       : 152B  static  ← deep frame (112B local buf + 40B)
+  format_timestamp  :  88B  static  ← deep frame (48B local buf + 40B)
+  isr_log           :  88B  static
+  apply_fir         : 136B  static  ← deep frame (96B float array + 40B)
+  apply_iir         : 120B  static  ← deep frame (80B float array + 40B)
+  signal_process    :  32B  static
+  adc_read_raw      :  16B  static
+  log_event         :  48B  static
+  main_task         :  24B  static
+  system_init       :  16B  static
+  sensor_init       :  24B  static
+  main              :  16B  static
+
+Call chain depths (DAG — no recursion):
+  TIM3→isr_log→pack_record       : 16+88+152 = 256B  ← WORST (ISR path)
+  TIM3→isr_log→format_timestamp  : 16+88+88  = 192B
+  main→main_task→signal→apply_fir: 16+24+32+136 = 208B
+  main→main_task→signal→apply_iir: 16+24+32+120 = 192B
+  main→sensor_init               : 16+24      =  40B
+
+Declared budget: 512B
+Worst single chain: 256B (50.0%)
+Combined preemption: 208B + 256B = 464B (90.6% of 512B)
+
+# ══════════════════════════════════════════════════════════════════════
+# SECTION F: HOW THIS DIFFERS FROM OTHER PROJECTS
+# ══════════════════════════════════════════════════════════════════════
+
+vs Project 4 (no_stack_section):
+  P4: no _Min_Stack_Size, no .stack section → tool uses fallback inference
+  P5: _Min_Stack_Size EXISTS, .stack section EXISTS → tool uses primary path
+  P5 critical: GAP not absence. Tool must NOT trigger the P4 fallback.
+
+vs Project 1 (golden_baseline):
+  P1: stack in CCM, _Min_Stack_Size = 2048B, 7.0% usage → all PASS
+  P5: stack in SRAM1, _Min_Stack_Size = 512B, 50% usage, 0B gap → CRITICAL+WARNING
+
+vs Project 3 (recursive_isr):
+  P3: CRITICAL is recursion (unbounded) — tool cannot compute any depth bound
+  P5: CRITICAL is zero gap — depth is bounded (256B) but adjacency is dangerous
+  P5 must fire stack_declared_too_small WARNING based on ratio alone
+  P3 must NOT fire that warning (recursion replaces it with CRITICAL)
+
+# ══════════════════════════════════════════════════════════════════════
+# SECTION G: PASS CRITERIA CHECKLIST
+# ══════════════════════════════════════════════════════════════════════
+
+  [ ] Score: 45/100
+  [ ] stack_bss_zero_gap CRITICAL fires (gap = 0B between __bss_end__ and __stack_start)
+  [ ] stack_declared_too_small WARNING fires (50%, with zero-gap context)
+  [ ] stack_not_in_ccm INFO fires (stack in SRAM1, CCM available)
+  [ ] isr_in_flash INFO fires for TIM3_IRQHandler (Flash, no ITCM on F407)
+  [ ] recursion_detected does NOT fire (DAG — no back-edges)
+  [ ] no_explicit_stack_section does NOT fire (stack section exists)
+  [ ] unaligned_dma_buffer does NOT fire (no .dma_buffers section)
+  [ ] itcm_overflow does NOT fire (F407 has no ITCM)
+  [ ] Tool correctly identifies __bss_end__ = __stack_start = 0x20009D78
+  [ ] Tool does not crash on computing zero-byte gap
+
+FAILURE TRIAGE:
+  stack_bss_zero_gap does not fire → map_parser.py not extracting
+    __bss_end__ and __stack_start, or gap comparison uses wrong symbols;
+    ensure you compare __bss_end__ (NOT _ebss) with __stack_start
+  no_explicit_stack_section fires (false positive) → ld_parser.py
+    absence check running before it confirms section present;
+    fix: only trigger absence path when _Min_Stack_Size is missing
+  recursion_detected fires → b/bl confusion in apply_fir or apply_iir;
+    both contain inner for-loops compiled to 'b.n', not 'bl'
+  Combined preemption not computed → stack_risk.py not adding ISR
+    depth to main-path depth for preemption scenario

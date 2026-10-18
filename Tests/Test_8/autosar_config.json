@@ -1,0 +1,72 @@
+{
+  "scheduler": {
+    "algorithm": "RM",
+    "preemptive": true,
+    "resource_protocol": "PCP"
+  },
+  "cores": [
+    {
+      "id": 0,
+      "algorithm": "RM"
+    },
+    {
+      "id": 1,
+      "algorithm": "EDF"
+    }
+  ],
+  "resources": [
+    {
+      "name": "uart_tx_lock",
+      "type": "mutex",
+      "accessed_by": ["Task_SysInit", "Task_RxProc"],
+      "critical_section_us": 2.5
+    }
+  ],
+  "tasks": [
+    {
+      "name": "Task_RxProc",
+      "entry_function": "process_rx",
+      "period_ms": 10,
+      "deadline_ms": 10,
+      "core": 0,
+      "priority": 2,
+      "resources": ["uart_tx_lock"]
+    },
+    {
+      "name": "Task_SysInit",
+      "entry_function": "system_init",
+      "period_ms": 50,
+      "deadline_ms": 50,
+      "core": 0,
+      "priority": 1,
+      "resources": ["uart_tx_lock"]
+    },
+    {
+      "name": "Task_UartPoll",
+      "entry_function": "uart_poll",
+      "period_ms": 5,
+      "deadline_ms": 5,
+      "core": 1,
+      "priority": 1,
+      "resources": []
+    }
+  ],
+  "inter_core_channels": [
+    {
+      "from_task": "Task_UartPoll",
+      "to_task": "Task_RxProc",
+      "shared_region": "SRAM",
+      "sync_mechanism": "spinlock"
+    }
+  ],
+  "isrs": [
+    {
+      "name": "USART1_IRQHandler",
+      "priority": 250,
+      "core": 0,
+      "period_ms": 1,
+      "deadline_ms": 1,
+      "entry_function": "uart_send_byte"
+    }
+  ]
+}

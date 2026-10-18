@@ -1,0 +1,144 @@
+# expected_output.txt — Project 4: no_stack_section
+#
+# This file documents EXACTLY what the Firmware Efficiency Analyzer
+# must produce when run against this project. Use it as a test oracle.
+#
+# Run command:
+#   python main.py \
+#     --elf  project4_no_stack_section/build/firmware.elf \
+#     --map  project4_no_stack_section/build/firmware.map \
+#     --ld   project4_no_stack_section/minimal.ld \
+#     --chip project4_no_stack_section/chips/stm32f407.yaml \
+#     --su-dir project4_no_stack_section/su \
+#     --startup project4_no_stack_section/src/startup.s \
+#     --freq-mhz 168
+#
+# ──────────────────────────────────────────────────────────────────────
+
+REQUIRED FINDINGS:
+==================
+
+[1] MUST FIRE — no_explicit_stack_section
+    Severity : WARNING
+    Tag      : [STATIC]
+    Trigger  : No _Min_Stack_Size symbol anywhere in minimal.ld
+               No STACK section in SECTIONS block
+               No __stack_start / __stack_end symbols in .map
+
+    Required message elements:
+      - State that no explicit stack section was found
+      - Compute inferred headroom: _estack - __bss_end__
+          = 0x20020000 - 0x20001034 = 0x0001EFC0 = 126,912 bytes
+      - Express headroom as KB: 123.9 KB
+      - State that this is an INFERRED value, not a guaranteed reserve
+      - Warn that BSS growth will silently reduce stack headroom
+      - Suggest fix: add explicit STACK section with _Min_Stack_Size
+
+    What tests in the analyzer:
+      - ld_parser.py: Does it detect absence of _Min_Stack_Size?
+      - ld_parser.py: Does it detect absence of STACK section keyword?
+      - map_parser.py: Does it find _estack and __bss_end__ symbols?
+      - rules/stack_risk.py: Does the fallback path activate?
+      - The tool must NOT crash or skip stack analysis when no stack section exists.
+
+[2] MUST FIRE — isr_always_in_flash (chip-specific, F407 only)
+    Severity : INFO
+    Tag      : [STATIC]
+    Trigger  : chip profile has no ITCM region (stm32f407.yaml: no ITCM key)
+
+    Required message elements:
+      - Note that STM32F407 (Cortex-M4) has no ITCM
+      - ISRs are always executed from Flash on this chip
+      - Recommend: verify ART accelerator enabled (FLASH_ACR bit 9)
+      - Recommend: verify prefetch buffer enabled (FLASH_ACR bit 8)
+
+    What tests in the analyzer:
+      - rules/isr_placement.py: Does it handle chips with no ITCM gracefully?
+      - chip_profile.py: Does it expose a "no_itcm" flag?
+      - Tool must NOT fire the standard "ISR in flash — move to ITCM" warning
+        because that recommendation is impossible on this chip.
+
+[3] MUST FIRE — stack_in_sram_not_ccm
+    Severity : INFO
+    Tag      : [STATIC] [HEURISTIC]
+    Trigger  : _estack = 0x20020000 (top of SRAM1)
+               CCM region exists at 0x10000000 per chip profile
+               Stack is not in CCM
+
+    Required message elements:
+      - Note stack top is at SRAM1 (0x20020000), which shares AHB bus with DMA
+      - CCM (0x10000000, 64KB) is available for CPU-only zero-wait-state access
+      - DMA cannot reach CCM — placing stack there eliminates bus contention
+      - Note this is [HEURISTIC] — analyzer cannot verify without linker script STACK section
+
+    What tests in the analyzer:
+      - region_classifier.py: Can it identify _estack's region?
+      - chip_profile.py: Does it surface CCM availability and DMA-isolation property?
+      - rules/bus_contention.py or a new stack_placement rule
+
+MUST NOT FIRE:
+==============
+
+[A] MUST NOT fire "stack overflow risk" (critical)
+    Reason: Without an explicit stack section, worst-case call depth (96 bytes
+            from .su data) cannot be compared against a known stack budget.
+            The tool cannot compute headroom vs depth without a declared size.
+            Firing a critical "overflow risk" here would be a false positive.
+            Correct behavior: warn about unverifiability, not overflow.
+
+[B] MUST NOT crash on missing _Min_Stack_Size
+    Reason: This is the primary negative test. The tool must handle absence
+            of stack metadata gracefully with a warning, not an exception.
+
+[C] MUST NOT fire ISR-placement warning with ITCM recommendation
+    Reason: Chip profile shows no ITCM. Recommending ITCM placement on
+            a chip that doesn't have it is a wrong fix.
+
+MEMORY MAP EXPECTED OUTPUT:
+===========================
+  FLASH  : 1,336 bytes / 1,048,576 bytes (0.1%)
+  SRAM1  : 4,148 bytes / 114,688 bytes (3.6%)
+           (.data = 12B, .bss = 4136B)
+  CCM    : 0 bytes / 65,536 bytes (0.0%)   ← stack SHOULD be here
+  Stack  : UNVERIFIABLE — no explicit section
+
+  _estack          = 0x20020000  (SRAM top)
+  __bss_end__      = 0x20001034
+  Inferred headroom = 126,924 bytes
+
+STACK USAGE FROM .su:
+=====================
+  system_init    : 16 bytes  (static)
+  uart_init      : 32 bytes  (static)
+  uart_send_byte : 16 bytes  (static)
+  process_rx     : 64 bytes  (static)
+  uart_poll      : 32 bytes  (static)
+  main           : 16 bytes  (static)
+
+  Worst-case call chain (from static call graph):
+    main(16) → uart_poll(32) → process_rx(64) = 112 bytes peak
+    main(16) → uart_init(32) → (leaf) = 48 bytes
+    NOTE: Without declared stack size, cannot determine if 112B is safe.
+
+WHAT TO VERIFY MANUALLY AFTER RUNNING THE TOOL:
+================================================
+1. Does the tool print a WARNING about missing stack section?
+   If YES → PASS
+   If NO  → FAIL: ld_parser.py does not detect absent stack definition
+
+2. Does the tool compute inferred headroom correctly?
+   Expected: 0x20020000 - 0x20001034 = 126,924 bytes
+   If correct → PASS
+   If wrong   → FAIL: check map_parser.py symbol extraction for _estack / __bss_end__
+
+3. Does the tool crash with KeyError or AttributeError?
+   If NO  → PASS
+   If YES → FAIL: stack_risk.py fallback path not implemented
+
+4. Does the tool fire a chip-specific note about no ITCM?
+   If YES → PASS
+   If NO  → FAIL: chip_profile.py not surfacing no_itcm flag
+
+5. Does the tool recommend CCM for stack placement?
+   If YES → PASS (good opportunity detection)
+   If NO  → acceptable but suboptimal

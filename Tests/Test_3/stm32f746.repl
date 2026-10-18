@@ -1,0 +1,38 @@
+// stm32f746.repl — Renode platform description for STM32F746VG
+
+nvic: IRQControllers.NVIC @ sysbus 0xE000E000
+    priorityMask: 0xF0
+    systickFrequency: 216000000
+    IRQ -> cpu@0
+
+cpu: CPU.CortexM @ sysbus
+    cpuType: "cortex-m7"
+    nvic: nvic
+
+flash: Memory.MappedMemory @ sysbus 0x08000000
+    size: 0x100000
+
+itcm: Memory.MappedMemory @ sysbus 0x00000000
+    size: 0x4000
+
+dtcm: Memory.MappedMemory @ sysbus 0x20000000
+    size: 0x10000
+
+sram1: Memory.MappedMemory @ sysbus 0x20010000
+    size: 0x3C000
+
+sram2: Memory.MappedMemory @ sysbus 0x2004C000
+    size: 0x4000
+
+// APB peripheral stub region
+apb_stub: Memory.MappedMemory @ sysbus 0x40000000
+    size: 0x20000
+
+apb2_stub: Memory.MappedMemory @ sysbus 0x40010000
+    size: 0x10000
+
+rcc_stub: Memory.MappedMemory @ sysbus 0x40020000
+    size: 0x10000
+
+flash_iface: Memory.MappedMemory @ sysbus 0x40023C00
+    size: 0x400

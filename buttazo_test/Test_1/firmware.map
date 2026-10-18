@@ -1,0 +1,75 @@
+
+There are no discarded input sections
+
+Memory Configuration
+
+Name             Origin             Length             Attributes
+DTCM             0x10000000         0x00010000         xrw
+SRAM1            0x20000000         0x02000000         xrw
+FLASH            0x08000000         0x02000000         xr
+*default*        0x00000000         0xffffffff
+
+Linker script and memory map
+
+LOAD C:\Users\YASHWA~1\AppData\Local\Temp\ccU47QnV.o
+                0x00000400                        _Min_Stack_Size = 0x400
+                0x10010000                        _estack = (ORIGIN (DTCM) + LENGTH (DTCM))
+
+.text           0x20000000   0x216ff2 load address 0x08000000
+ *(.text)
+ .text          0x20000000        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\ccU47QnV.o
+ *(.text*)
+ .text.task1    0x20000000    0x592aa C:\Users\YASHWA~1\AppData\Local\Temp\ccU47QnV.o
+                0x20000000                task1
+ .text.task2    0x200592aa    0xb254a C:\Users\YASHWA~1\AppData\Local\Temp\ccU47QnV.o
+                0x200592aa                task2
+ .text.task3    0x2010b7f4   0x10b7ec C:\Users\YASHWA~1\AppData\Local\Temp\ccU47QnV.o
+                0x2010b7f4                task3
+ .text.main     0x20216fe0       0x12 C:\Users\YASHWA~1\AppData\Local\Temp\ccU47QnV.o
+                0x20216fe0                main
+
+.glue_7         0x20216ff4        0x0 load address 0x08216ff2
+ .glue_7        0x20216ff4        0x0 linker stubs
+
+.glue_7t        0x20216ff4        0x0 load address 0x08216ff2
+ .glue_7t       0x20216ff4        0x0 linker stubs
+
+.vfp11_veneer   0x20216ff4        0x0 load address 0x08216ff2
+ .vfp11_veneer  0x20216ff4        0x0 linker stubs
+
+.v4_bx          0x20216ff4        0x0 load address 0x08216ff2
+ .v4_bx         0x20216ff4        0x0 linker stubs
+
+.iplt           0x20216ff4        0x0 load address 0x08216ff2
+ .iplt          0x20216ff4        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\ccU47QnV.o
+
+.rel.dyn        0x20216ff4        0x0 load address 0x08216ff2
+ .rel.iplt      0x20216ff4        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\ccU47QnV.o
+
+.data           0x20216ff2        0x0 load address 0x08216ff2
+ *(.data)
+ .data          0x20216ff2        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\ccU47QnV.o
+
+.igot.plt       0x20216ff4        0x0 load address 0x08216ff2
+ .igot.plt      0x20216ff4        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\ccU47QnV.o
+
+.bss            0x20216ff2        0x0 load address 0x08216ff2
+                0x20216ff2                        __bss_start__ = .
+ *(.bss)
+ .bss           0x20216ff2        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\ccU47QnV.o
+                0x20216ff2                        __bss_end__ = .
+
+.stack          0x10000000      0x400
+                0x10000400                        . = (. + _Min_Stack_Size)
+ *fill*         0x10000000      0x400 
+OUTPUT(firmware.elf elf32-littlearm)
+LOAD linker stubs
+
+.comment        0x00000000       0x45
+ .comment       0x00000000       0x45 C:\Users\YASHWA~1\AppData\Local\Temp\ccU47QnV.o
+                                 0x46 (size before relaxing)
+
+.ARM.attributes
+                0x00000000       0x2e
+ .ARM.attributes
+                0x00000000       0x2e C:\Users\YASHWA~1\AppData\Local\Temp\ccU47QnV.o

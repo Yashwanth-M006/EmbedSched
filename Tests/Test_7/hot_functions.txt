@@ -1,0 +1,10 @@
+# hot_functions.txt
+# List of performance-critical functions for cache locality analysis.
+# Analyzer will report gaps between consecutive hot functions on this list.
+#
+# Format: one function name per line (no wildcards)
+# Tool will look up each name in the .map file and extract address/size.
+
+main
+sensor_read
+uart_tx

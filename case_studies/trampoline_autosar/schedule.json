@@ -1,0 +1,75 @@
+{
+  "_source": "Trampoline RTOS AUTOSAR OS Case Study — STM32F4-Discovery (STM32F407VG at 168MHz)",
+  "_oil_file": "case_studies/trampoline_autosar/trampoline_autosar.oil",
+  "_note": "OIL task and resource definitions mapped directly. Periods from ALARM CYCLETIME x 1ms tick.",
+
+  "chip": "chips/stm32f407.yaml",
+  "firmware_freq_mhz": 168,
+
+  "cores": [
+    {
+      "id": 0,
+      "algorithm": "RM",
+      "preemptive": true,
+      "_note": "SCHEDULE=FULL in OIL denotes preemptive fixed priority"
+    }
+  ],
+
+  "resource_protocol": "PCP",
+  "_pcp_note": "AUTOSAR OS / OSEK standard specifies Stack Resource Policy (SRP) / Priority Ceiling Protocol (PCP)",
+
+  "resources": [
+    {
+      "name": "led_resource",
+      "_oil_name": "led_resource",
+      "type": "mutex",
+      "accessed_by": ["Task_blink", "Task_read_button"],
+      "max_critical_section_ms": 0.25,
+      "task_critical_sections_us": {
+        "Task_blink": 50.0,
+        "Task_read_button": 250.0
+      }
+    }
+  ],
+
+  "tasks": [
+    {
+      "name": "Task_blink",
+      "_oil_task": "blink",
+      "entry_function": "blink_function",
+      "period_ms": 10.0,
+      "_period_source": "ALARM blink_alarm: CYCLETIME=10 ticks x 1ms",
+      "deadline_ms": 10.0,
+      "core": 0,
+      "priority": 1,
+      "_oil_priority": "PRIORITY=1 (highest among tasks)",
+      "resources": ["led_resource"]
+    },
+    {
+      "name": "Task_read_button",
+      "_oil_task": "read_button",
+      "entry_function": "read_button_function",
+      "period_ms": 20.0,
+      "_period_source": "Periodic button polling / interrupt deferred processing window",
+      "deadline_ms": 20.0,
+      "core": 0,
+      "priority": 2,
+      "_oil_priority": "PRIORITY=2",
+      "resources": ["led_resource"]
+    }
+  ],
+
+  "isrs": [
+    {
+      "name": "Task_ISR_EXTI0",
+      "entry_function": "isr_button_function",
+      "period_ms": 50.0,
+      "deadline_ms": 1.0,
+      "core": 0,
+      "priority": 0,
+      "_note": "Category 2 ISR triggered on PA0 button push"
+    }
+  ],
+
+  "inter_core_channels": []
+}

@@ -1,0 +1,6 @@
+src/main.c:98:13:system_init	16	static
+src/main.c:121:13:uart_init	32	static
+src/main.c:154:13:uart_send_byte	16	static
+src/main.c:166:13:process_rx	64	static
+src/main.c:223:12:uart_poll	32	static
+src/main.c:267:5:main	16	static

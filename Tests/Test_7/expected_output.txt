@@ -1,0 +1,175 @@
+# expected_output.txt — Project 7: fragmented_flash
+#
+# Run command:
+#   python main.py \
+#     --elf     project7_fragmented_flash/build/fragmented.txt \
+#     --map     project7_fragmented_flash/build/fragmented.map \
+#     --ld      project7_fragmented_flash/STM32F4xx.ld \
+#     --chip    project7_fragmented_flash/chips/stm32f407.yaml \
+#     --su-dir  project7_fragmented_flash/su \
+#     --startup project7_fragmented_flash/src/startup.s \
+#     --hot-funcs project7_fragmented_flash/build/hot_functions.txt \
+#     --freq-mhz 168
+#
+# NOTE: fragmented.txt is arm-none-eabi-objdump -d output.
+#       Parser detects .txt extension and skips objdump.
+#
+# ======================================================================
+
+OVERALL SCORE: 85 / 100
+  Observations:
+    flash_fragmentation  (-15)
+      Three hot functions separated by cache-unfriendly gaps
+
+# ======================================================================
+# SECTION A: FLASH FRAGMENTATION (Cache Locality Analysis)
+# ======================================================================
+
+[INFO] [STATIC] flash_fragmentation
+  Hot function list: main, sensor_read, uart_tx
+
+  Function Map:
+    main        @ 0x08001000  size 0x44 (68 bytes)
+    sensor_read @ 0x080015C0  size 0x20 (32 bytes)
+    uart_tx     @ 0x08002800  size 0x50 (80 bytes)
+
+  Gap Analysis (32-byte cache line assumed):
+    Gap 1: main → sensor_read
+      Start:  0x08001044  (main end)
+      End:    0x080015C0  (sensor_read start)
+      Size:   0x5C0 = 1472 bytes
+      Lines:  1472 / 32 = 46 cache lines
+      Status: LARGE GAP — multiple I-cache misses predicted
+      Fix:    Reorder link flags; use -fno-function-sections; add linker
+              script grouping (e.g., KEEP() for sensor-related code)
+
+    Gap 2: sensor_read → uart_tx
+      Start:  0x080015E0  (sensor_read end)
+      End:    0x08002800  (uart_tx start)
+      Size:   0x1220 = 4640 bytes
+      Lines:  4640 / 32 = 145 cache lines
+      Status: SEVERE GAP — catastrophic I-cache thrashing
+      Fix:    Same as Gap 1; alternatively, consider splitting hot functions
+              across separate FLASH_FAST region in linker script
+
+  Aggregate Impact:
+    - Calling sequence main→sensor_read→uart_tx involves 191 cache misses
+    - At 4-cycle penalty per miss (conservative): 764 cycles
+    - At 168 MHz: ~4.5 microseconds per round trip (worst-case)
+    - Hot loop penalty if main/sensor_read/uart_tx called 1000x: 4.5ms overhead
+
+  Notes:
+    - Main and sensor_read: 32-byte functions; no overlap in same cache line
+    - sensor_read to uart_tx: 4640-byte gap; any prefetch buffer emptied
+    - Compiler -ffunction-sections with --gc-sections is culprit
+    - Issue NOT fixable at runtime; requires relink or recompile
+
+# ======================================================================
+# SECTION B: MUST NOT FIRE
+# ======================================================================
+
+[B1] MUST NOT fire: isr_calls_blocking_function
+  Why: No ISRs in this project; all functions are in main loop.
+  If fires -> BUG: .txt parser interpreting loop branches as IRQ handlers
+
+[B2] MUST NOT fire: stack_overflow_risk
+  Why: Max stack: main (32B) → sensor_read (32B) → uart_tx (40B) = 104B
+       Budget: 1024B. Usage: 10%. Well within limits.
+  If fires -> BUG: stack frame computation error
+
+[B3] MUST NOT fire: unaligned_dma_buffer
+  Why: No .dma_buffers section; tx_buffer in .bss, not flagged as DMA.
+  If fires -> BUG: Rule incorrectly treating all BSS arrays as DMA buffers
+
+[B4] MUST NOT fire: recursion_detected
+  Why: DAG—no back-edges; main→sensor_read→uart_tx is acyclic.
+  If fires -> BUG: Call graph construction error
+
+# ======================================================================
+# SECTION C: FUNCTION MAP (from fragmented.txt)
+# ======================================================================
+
+  main            @ 0x08001000  Flash  size: 0x44
+  main_loop       @ 0x08001044  Flash  size: 0x0C
+  idle_task       @ 0x08001050  Flash  size: 0x0A
+  config_sensor   @ 0x0800105C  Flash  size: 0x18
+  calibrate_sensor @ 0x08001074  Flash  size: 0x1C
+  temp_sensor_init @ 0x08001090  Flash  size: 0x0A
+  humidity_sensor_init @ 0x0800109A  Flash  size: 0x0A
+  pressure_sensor_init @ 0x080010A4  Flash  size: 0x0A
+  read_adc        @ 0x080010AE  Flash  size: 0x0A
+  filter_data     @ 0x08001400  Flash  size: 0x08
+  apply_calibration @ 0x08001408  Flash  size: 0x08
+  sensor_read     @ 0x080015C0  Flash  size: 0x20
+  uart_tx         @ 0x08002800  Flash  size: 0x50
+  uart_rx         @ 0x08002850  Flash  size: 0x30
+  uart_flush      @ 0x08002880  Flash  size: 0x08
+  uart_set_baudrate @ 0x08002888  Flash  size: 0x08
+  error_handler   @ 0x08002890  Flash  size: 0x08
+  log_event       @ 0x08002898  Flash  size: 0x08
+  get_timestamp   @ 0x080028A0  Flash  size: 0x08
+  format_data     @ 0x080028A8  Flash  size: 0x08
+
+# ======================================================================
+# SECTION D: MEMORY LAYOUT
+# ======================================================================
+
+  Vector Table    : 0x08000000 – 0x080000B8  (184 bytes)
+  Gap             : 0x080000B8 – 0x08000100
+  Code (dispersed): 0x08000100 – 0x080028B0  (misc functions + GAPS)
+  SRAM1           : 0x20000000 – 0x2001BFFF  (112 KB)
+  SRAM2           : 0x2001C000 – 0x2001FFFF  (16 KB)
+
+  Fragmented Sections (highlights):
+    .text.system_init       0x0800012C – 0x0800013C (16B)
+    .text.uart_init         0x0800013C – 0x0800014C (16B)
+    [GAP: 0xEB4 bytes → 0x08001000]
+    .text.main              0x08001000 – 0x08001044 (68B)    ← HOT #1
+    [... intermediate sensor functions ...]
+    [GAP: 0x1A5 bytes → 0x080015C0]
+    .text.sensor_read       0x080015C0 – 0x080015E0 (32B)    ← HOT #2
+    [GAP: 0x1220 bytes → 0x08002800]
+    .text.uart_tx           0x08002800 – 0x08002850 (80B)    ← HOT #3
+    [... remaining UART functions ...]
+
+# ======================================================================
+# SECTION E: STACK USAGE
+# ======================================================================
+
+  main            : 32B  static
+  sensor_read     : 32B  static
+  uart_tx         : 40B  static
+  uart_rx         : 40B  static
+  calibrate_sensor: 32B  static
+
+  Deepest call chain: main → sensor_read → uart_tx
+    Stack: 32 + 32 + 40 = 104B / 1024B budget = 10.1%
+
+# ======================================================================
+# SECTION F: PASS CRITERIA CHECKLIST
+# ======================================================================
+
+  [ ] Score: 85/100 (gap penalty applied)
+  [ ] flash_fragmentation INFO fires with correct gap sizes
+  [ ] Gap 1 (main→sensor_read): 0x5C0 = 1472 bytes detected
+  [ ] Gap 2 (sensor_read→uart_tx): 0x1220 = 4640 bytes detected
+  [ ] Cache line calculation: 1472/32 = 46 lines; 4640/32 = 145 lines
+  [ ] hot_functions.txt correctly parsed (3 entries)
+  [ ] All three hot functions located in .map
+  [ ] stack_overflow_risk does NOT fire (10.1% < 80% threshold)
+  [ ] isr_calls_blocking_function does NOT fire
+  [ ] recursion_detected does NOT fire
+  [ ] unaligned_dma_buffer does NOT fire
+  [ ] fragmented.txt parsed correctly (.txt fast-path)
+  [ ] fragmented.map loaded and section addresses extracted
+
+FAILURE TRIAGE:
+  Gap not detected -> .map parser not finding function start/end addresses
+    Check: map_parser.py extracts symbol name, start address, size
+  Gap size wrong -> address calculation error; verify:
+    Gap = (next_func_start - prev_func_end)
+  Cache line calculation wrong -> hardcoded 32B line size; update if needed
+  Hot functions list not read -> file path may be wrong in CLI args
+    Check: --hot-funcs flag parsing; file exists at project7_.../build/
+  Fragmentation score penalty wrong -> scoring formula; expected: -15 for
+    two large gaps; adjust thresholds if needed

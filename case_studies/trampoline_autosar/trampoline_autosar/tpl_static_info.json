@@ -1,0 +1,127 @@
+
+{
+  "alarm" : 
+  [
+    
+    {
+      "ACTION" : "ACTIVATETASK",
+      "ACTION_S" : 
+      {
+        "TASK" : "blink"
+      },
+      "AUTOSTART" : "true",
+      "AUTOSTART_S" : 
+      {
+        "ALARMTIME" : 10,
+        "APPMODE" : 
+        [
+          
+          {
+            "VALUE" : "stdAppmode"
+          }
+        ],
+        "CYCLETIME" : 10
+      },
+      "COUNTER" : "SystemCounter",
+      "NAME" : "blink_alarm"
+    }
+  ],
+  "event" : [],
+  "ioc" : [],
+  "isr" : 
+  [
+    
+    {
+      "CATEGORY" : 2,
+      "KIND" : "ISR",
+      "NAME" : "isr_button",
+      "PRIORITY" : 8,
+      "SOURCE" : "EXTI0_IRQ",
+      "SOURCE_S" : 
+      {
+        "PIN" : "PA0",
+        "PIN_S" : 
+        {
+          "PULL" : "NONE",
+          "TRIGGER" : "RISING"
+        }
+      },
+      "STACKSIZE" : 256,
+      "USEFLOAT" : "false"
+    }
+  ],
+  "message" : [],
+  "resource" : 
+  [
+    
+    {
+      "ISRUSAGE" : [],
+      "KIND" : "Resource",
+      "NAME" : "led_resource",
+      "PRIORITY" : 3,
+      "RESOURCEPROPERTY" : "STANDARD",
+      "TASKUSAGE" : 
+      [
+        
+        {
+          "VALUE" : "blink"
+        },        
+        {
+          "VALUE" : "read_button"
+        }
+      ]
+    }
+  ],
+  "task" : 
+  [
+    
+    {
+      "ACTIVATION" : 1,
+      "AUTOSTART" : "false",
+      "KIND" : "Task",
+      "NAME" : "blink",
+      "NONPREEMPTABLE" : "false",
+      "PRIORITY" : 1,
+      "RESOURCE" : 
+      [
+        
+        {
+          "VALUE" : "led_resource"
+        }
+      ],
+      "SCHEDULE" : "FULL",
+      "STACKSIZE" : 512,
+      "USEFLOAT" : "false",
+      "USEINTERNALRESOURCE" : "false"
+    },    
+    {
+      "ACTIVATION" : 1,
+      "AUTOSTART" : "true",
+      "AUTOSTART_S" : 
+      {
+        "APPMODE" : 
+        [
+          
+          {
+            "VALUE" : "stdAppmode"
+          }
+        ]
+      },
+      "KIND" : "Task",
+      "NAME" : "read_button",
+      "NONPREEMPTABLE" : "false",
+      "PRIORITY" : 2,
+      "RESOURCE" : 
+      [
+        
+        {
+          "VALUE" : "led_resource"
+        }
+      ],
+      "SCHEDULE" : "FULL",
+      "STACKSIZE" : 512,
+      "USEFLOAT" : "false",
+      "USEINTERNALRESOURCE" : "false"
+    }
+  ]
+}

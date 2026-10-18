@@ -1,0 +1,11 @@
+src/main.c:134:6:TIM2_IRQHandler	8	static
+src/main.c:152:6:USART1_IRQHandler	16	static
+src/main.c:177:13:tick_update	16	static
+src/main.c:196:16:checksum_verify	32	static
+src/main.c:217:13:emit_token	24	static
+src/main.c:252:12:parse_packet	72	static
+src/main.c:316:13:uart_rx_dispatch	24	static
+src/main.c:364:13:system_init	16	static
+src/main.c:383:13:uart_init	24	static
+src/main.c:408:13:idle_task	16	static
+src/main.c:426:5:main	16	static

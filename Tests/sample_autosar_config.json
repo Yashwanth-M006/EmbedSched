@@ -1,0 +1,72 @@
+{
+  "chip": "chips/stm32f746.yaml",
+  "scheduler": {
+    "algorithm": "RM",
+    "preemptive": true,
+    "resource_protocol": "PCP"
+  },
+  "cores": [
+    {
+      "id": 0,
+      "algorithm": "RM"
+    },
+    {
+      "id": 1,
+      "algorithm": "EDF"
+    }
+  ],
+  "resources": [
+    {
+      "name": "spi_bus_lock",
+      "type": "mutex",
+      "accessed_by": ["Task_SensorRead", "Task_Telemetry"]
+    }
+  ],
+  "tasks": [
+    {
+      "name": "Task_MotorControl",
+      "entry_function": "motor_control_loop",
+      "period_ms": 10,
+      "deadline_ms": 10,
+      "core": 0,
+      "priority": 1,
+      "resources": ["spi_bus_lock"]
+    },
+    {
+      "name": "Task_SensorRead",
+      "entry_function": "sensor_acquisition",
+      "period_ms": 20,
+      "deadline_ms": 15,
+      "core": 0,
+      "priority": 2,
+      "resources": ["spi_bus_lock"]
+    },
+    {
+      "name": "Task_Telemetry",
+      "entry_function": "can_transmit_handler",
+      "period_ms": 100,
+      "deadline_ms": 100,
+      "core": 1,
+      "priority": 1,
+      "resources": []
+    }
+  ],
+  "inter_core_channels": [
+    {
+      "from_task": "Task_SensorRead",
+      "to_task": "Task_Telemetry",
+      "shared_region": "SRAM1",
+      "sync_mechanism": "spinlock"
+    }
+  ],
+  "isrs": [
+    {
+      "name": "ADC_IRQHandler",
+      "priority": 250,
+      "core": 0,
+      "period_ms": 0.5,
+      "deadline_ms": 0.5,
+      "entry_function": "adc_dma_isr"
+    }
+  ]
+}

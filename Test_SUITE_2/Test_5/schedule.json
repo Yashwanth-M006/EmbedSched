@@ -1,0 +1,50 @@
+{
+  "chip": "Test_SUITE_2/Test_5/stm32h745.yaml",
+  "cores": [
+    { "id": 0, "algorithm": "EDF", "preemptive": true },
+    { "id": 1, "algorithm": "RM",  "preemptive": true }
+  ],
+  "tasks": [
+    {
+      "name": "Task_VisionProc",
+      "entry_function": "vision_processing",
+      "period_ms": 33,
+      "deadline_ms": 33,
+      "core": 0,
+      "priority": null
+    },
+    {
+      "name": "Task_ObjectDetect",
+      "entry_function": "object_detection",
+      "period_ms": 100,
+      "deadline_ms": 80,
+      "core": 0,
+      "priority": null
+    },
+    {
+      "name": "Task_CANPublish",
+      "entry_function": "can_publish",
+      "period_ms": 50,
+      "deadline_ms": 50,
+      "core": 1,
+      "priority": 2
+    },
+    {
+      "name": "Task_SafetyMonitor",
+      "entry_function": "safety_monitor",
+      "period_ms": 10,
+      "deadline_ms": 10,
+      "core": 1,
+      "priority": 1
+    }
+  ],
+  "inter_core_channels": [
+    {
+      "from_task": "Task_ObjectDetect",
+      "to_task": "Task_CANPublish",
+      "shared_region": "SRAM3",
+      "sync_mechanism": "spinlock",
+      "write_latency_us": 1000.0
+    }
+  ]
+}

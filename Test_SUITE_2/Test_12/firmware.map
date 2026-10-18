@@ -1,0 +1,78 @@
+
+There are no discarded input sections
+
+Memory Configuration
+
+Name             Origin             Length             Attributes
+DTCM             0x10000000         0x00010000         xrw
+SRAM1            0x20000000         0x0001c000         xrw
+FLASH            0x08000000         0x00100000         xr
+*default*        0x00000000         0xffffffff
+
+Linker script and memory map
+
+LOAD C:\Users\YASHWA~1\AppData\Local\Temp\cck5cgWB.o
+                0x00000400                        _Min_Stack_Size = 0x400
+                0x10010000                        _estack = (ORIGIN (DTCM) + LENGTH (DTCM))
+
+.text           0x20000000     0xc7f0
+ *(.text)
+ .text          0x20000000        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\cck5cgWB.o
+ *(.text*)
+ .text.motor_control_loop
+                0x20000000     0x722e C:\Users\YASHWA~1\AppData\Local\Temp\cck5cgWB.o
+                0x20000000                motor_control_loop
+ .text.sensor_aggregate
+                0x2000722e     0x391c C:\Users\YASHWA~1\AppData\Local\Temp\cck5cgWB.o
+                0x2000722e                sensor_aggregate
+ .text.can_transmit_handler
+                0x2000ab4a     0x1c94 C:\Users\YASHWA~1\AppData\Local\Temp\cck5cgWB.o
+                0x2000ab4a                can_transmit_handler
+ .text.main     0x2000c7de       0x12 C:\Users\YASHWA~1\AppData\Local\Temp\cck5cgWB.o
+                0x2000c7de                main
+
+.glue_7         0x2000c7f0        0x0
+ .glue_7        0x2000c7f0        0x0 linker stubs
+
+.glue_7t        0x2000c7f0        0x0
+ .glue_7t       0x2000c7f0        0x0 linker stubs
+
+.vfp11_veneer   0x2000c7f0        0x0
+ .vfp11_veneer  0x2000c7f0        0x0 linker stubs
+
+.v4_bx          0x2000c7f0        0x0
+ .v4_bx         0x2000c7f0        0x0 linker stubs
+
+.iplt           0x2000c7f0        0x0
+ .iplt          0x2000c7f0        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\cck5cgWB.o
+
+.rel.dyn        0x2000c7f0        0x0
+ .rel.iplt      0x2000c7f0        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\cck5cgWB.o
+
+.data           0x2000c7f0        0x0
+ *(.data)
+ .data          0x2000c7f0        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\cck5cgWB.o
+
+.igot.plt       0x2000c7f0        0x0
+ .igot.plt      0x2000c7f0        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\cck5cgWB.o
+
+.bss            0x2000c7f0        0x0
+                0x2000c7f0                        __bss_start__ = .
+ *(.bss)
+ .bss           0x2000c7f0        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\cck5cgWB.o
+                0x2000c7f0                        __bss_end__ = .
+
+.stack          0x10000000      0x400
+                0x10000400                        . = (. + _Min_Stack_Size)
+ *fill*         0x10000000      0x400 
+OUTPUT(firmware.elf elf32-littlearm)
+LOAD linker stubs
+
+.comment        0x00000000       0x45
+ .comment       0x00000000       0x45 C:\Users\YASHWA~1\AppData\Local\Temp\cck5cgWB.o
+                                 0x46 (size before relaxing)
+
+.ARM.attributes
+                0x00000000       0x2e
+ .ARM.attributes
+                0x00000000       0x2e C:\Users\YASHWA~1\AppData\Local\Temp\cck5cgWB.o

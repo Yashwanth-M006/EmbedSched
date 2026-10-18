@@ -1,0 +1,161 @@
+# chips/stm32f746.yaml
+# STM32F746VG chip profile for the Firmware Efficiency Analyzer.
+#
+# Sources:
+#   - STM32F746 Reference Manual (RM0385), Rev 5
+#   - STM32F746 Datasheet (DS10916), Rev 5
+#   - ARMv7-M Architecture Reference Manual (DDI0403E)
+#   - ARM Cortex-M7 Processor Technical Reference Manual (DDI0489)
+
+name: STM32F746VG
+core: cortex-m7
+vendor: STMicroelectronics
+clock_max_mhz: 216
+
+cache:
+  present: true
+  icache_kb: 16
+  dcache_kb: 16
+  line_bytes: 32         # 32-byte cache lines (8 words)
+  ways: 4                # 4-way set associative
+  # Cache miss penalty at 216MHz / 7WS:
+  #   Line fill = 8 words × (7+1) cycles = 64 cycles = 296 ns
+  # Cache hit: 1 cycle = 4.63 ns
+  # ISR cold-entry jitter range: [55 ns, ~460 ns] depending on cache state
+
+memory_regions:
+  FLASH:
+    origin: 0x08000000
+    size_kb: 1024
+    bus: AXI              # AXI bus to flash, up to 7WS @ 216MHz
+    dma_accessible: false
+    notes: "AXI flash. Subject to wait states and I-cache."
+
+  ITCM:
+    origin: 0x00000000
+    size_kb: 16
+    wait_states: 0
+    bus_port: ITCM        # Direct I-bus connection to Cortex-M7
+    dma_accessible: false # DMA cannot reach ITCM on STM32F7
+    notes: >
+      Zero wait state, every access. Bypasses I-cache entirely.
+      Content must be copied from flash at startup (AT > FLASH in LD).
+      ISRs and hot functions placed here have deterministic fetch latency.
+      Rule 1: ISR in ITCM = CORRECT, no warning.
+
+  DTCM:
+    origin: 0x20000000
+    size_kb: 64
+    wait_states: 0
+    bus_port: DTCM        # Direct D-bus connection to Cortex-M7
+    dma_accessible: false # DMA cannot reach DTCM on STM32F7
+    notes: >
+      Zero wait state for data accesses. Correct location for stack
+      (DMA-isolated, zero-latency push/pop). Also ideal for hot globals.
+      Stack in DTCM eliminates bus contention on interrupt entry/exit.
+
+  SRAM1:
+    origin: 0x20010000
+    size_kb: 240
+    wait_states: 0
+    bus_port: AHB_S1      # AHB bus matrix slave port 1
+    dma_accessible: true
+    notes: >
+      Main general-purpose SRAM. DMA1, DMA2, and CPU D-bus all connect
+      via AHB_S1. Placing DMA buffers here causes contention with CPU.
+      Use SRAM2 for DMA-heavy buffers when CPU also accesses SRAM1.
+
+  SRAM2:
+    origin: 0x2004C000
+    size_kb: 16
+    wait_states: 0
+    bus_port: AHB_S2      # AHB bus matrix slave port 2 — separate from AHB_S1
+    dma_accessible: true
+    notes: >
+      Smaller SRAM on a SEPARATE AHB bus slave port from SRAM1.
+      DMA transfers to/from SRAM2 run on AHB_S2 while CPU accesses
+      SRAM1 on AHB_S1 → zero bus arbitration contention between them.
+      Correct placement for DMA buffers on STM32F7.
+
+flash_wait_states:
+  # STM32F746 RM0385 Table 5 — VDD 2.7-3.6V (VOS1), AXI interface
+  - { freq_max_mhz: 30,  ws: 0 }
+  - { freq_max_mhz: 60,  ws: 1 }
+  - { freq_max_mhz: 90,  ws: 2 }
+  - { freq_max_mhz: 120, ws: 3 }
+  - { freq_max_mhz: 150, ws: 4 }
+  - { freq_max_mhz: 180, ws: 5 }
+  - { freq_max_mhz: 210, ws: 6 }
+  - { freq_max_mhz: 216, ws: 7 }
+
+exception_entry_cycles: 12
+# Source: ARMv7-M ARM Section B1.5.6
+# Cortex-M7 can achieve 10-cycle entry with FPU lazy stacking disabled.
+# With lazy stacking enabled (default), 12 cycles minimum.
+# Additional cycles if D-cache has dirty lines that must be written back
+# before SP can advance. Worst case observed: ~18 cycles.
+
+vector_table_section: .isr_vector
+startup_file_pattern: "startup*.s"
+
+bus_matrix:
+  # STM32F746 AHB multi-layer bus matrix — RM0385 Figure 1
+  # Key property: SRAM1 and SRAM2 are on DIFFERENT slave ports.
+  # This is the critical F7 vs F4 distinction:
+  #   F4: SRAM1 + SRAM2 both on AHB_S0 (no isolation benefit)
+  #   F7: SRAM1 on AHB_S1, SRAM2 on AHB_S2 (isolation possible)
+  contending_pairs:
+    - masters: [CPU_D, DMA1, DMA2]
+      slave: AHB_S1
+      note: "SRAM1 — CPU D-bus, DMA1, DMA2 all contend here"
+    - masters: [CPU_D, DMA2]
+      slave: AHB_S2
+      note: "SRAM2 — DMA2 can reach it; CPU also can. But if CPU uses
+             SRAM1 (AHB_S1) and DMA uses SRAM2 (AHB_S2), NO contention."
+
+  isolation_principle: >
+    On STM32F7, bus contention between CPU and DMA is eliminated by:
+      - CPU data (stack, globals) in DTCM (not on AHB at all)
+      - DMA buffers in SRAM2 (AHB_S2)
+      - CPU code in ITCM (not on AHB at all)
+    When this layout is used, DMA transfers never compete with CPU
+    on any shared bus port. This is the ideal memory topology for
+    real-time systems on Cortex-M7.
+
+# ISR latency model for this chip at 216MHz (for analyzer timing estimates)
+isr_latency_model:
+  clock_mhz: 216
+  cycle_ns: 4.63
+  hw_entry_cycles: 12        # ARMv7-M ARM B1.5.6
+  itcm_fetch_penalty: 0      # zero wait state, no cache
+  flash_ws: 7                # from flash_wait_states at 216MHz
+  flash_cold_penalty_cycles: 64   # 8 words × (7+1) cycles (line fill)
+  calculated:
+    itcm_ns: 55.6             # 12 × 4.63 = 55.6 ns
+    flash_warm_ns: 92.6       # (12 + 8) × 4.63 = 92.6 ns (1 line already cached)
+    flash_cold_ns: 351.9      # (12 + 64) × 4.63 = 351.9 ns (cold miss)
+  source: "ARMv7-M ARM §B1.5.6 + STM32F746 RM0385 Table 5"
+
+analyzer_notes:
+  itcm_rule: >
+    Rule 1 fires when an ISR handler address is in the FLASH region.
+    Rule 1 must NOT fire when an ISR handler address is in ITCM.
+    Address discrimination: [0x08000000, 0x08100000) = flash,
+    [0x00000000, 0x00004000) = ITCM.
+    This is the primary test of Project 2.
+
+  veneer_note: >
+    The linker may emit 'veneer' stubs (e.g. __control_loop_veneer)
+    when a function in ITCM is called from flash code and the branch
+    distance exceeds the 24-bit BL instruction range. These veneers
+    live in flash. The analyzer should ignore veneer stubs (they are
+    linker-generated, not user code) and should not flag them as
+    'function in wrong section'. Pattern: symbol name ends in _veneer.
+
+  dcache_alignment: >
+    STM32F746 has a 32-byte D-cache line. DMA buffers that share a
+    cache line with other data will cause SCB_CleanDCache_by_Addr to
+    flush adjacent data (cache maintenance granularity = line size).
+    32-byte alignment avoids this. Rule 5 checks this alignment.
+    On this chip, cache is present and active — Rule 5 findings are
+    genuine hardware hazards, not just portability concerns.

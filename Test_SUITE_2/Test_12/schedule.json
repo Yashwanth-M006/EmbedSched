@@ -1,0 +1,32 @@
+{
+  "chip": "stm32f407.yaml",
+  "cores": [
+    { "id": 0, "algorithm": "RM", "preemptive": true }
+  ],
+  "tasks": [
+    {
+      "name": "Task_MotorControl",
+      "entry_function": "motor_controll_loop",
+      "period_ms": 1,
+      "deadline_ms": 1,
+      "core": 0,
+      "priority": 1
+    },
+    {
+      "name": "Task_SensorAgg",
+      "entry_function": "sensor_aggregate",
+      "period_ms": 20,
+      "deadline_ms": 20,
+      "core": 0,
+      "priority": 2
+    },
+    {
+      "name": "Task_CANTransmit",
+      "entry_function": "can_transmit_handler",
+      "period_ms": 100,
+      "deadline_ms": 100,
+      "core": 0,
+      "priority": 3
+    }
+  ]
+}

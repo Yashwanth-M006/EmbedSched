@@ -1,0 +1,102 @@
+
+There are no discarded input sections
+
+Memory Configuration
+
+Name             Origin             Length             Attributes
+DTCM             0x10000000         0x00010000         xrw
+SRAM1            0x20000000         0x02000000         xrw
+FLASH            0x08000000         0x02000000         xr
+*default*        0x00000000         0xffffffff
+
+Linker script and memory map
+
+LOAD C:\Users\YASHWA~1\AppData\Local\Temp\ccS7x2gd.o
+START GROUP
+LOAD C:/Users/Yashwanth/Downloads/arm-gnu-toolchain-15.2.rel1-mingw-w64-i686-arm-none-eabi/bin/../lib/gcc/arm-none-eabi/15.2.1/thumb/v7e-m+fp/hard\libgcc.a
+LOAD C:/Users/Yashwanth/Downloads/arm-gnu-toolchain-15.2.rel1-mingw-w64-i686-arm-none-eabi/bin/../lib/gcc/arm-none-eabi/15.2.1/../../../../arm-none-eabi/lib/thumb/v7e-m+fp/hard\libg.a
+LOAD C:/Users/Yashwanth/Downloads/arm-gnu-toolchain-15.2.rel1-mingw-w64-i686-arm-none-eabi/bin/../lib/gcc/arm-none-eabi/15.2.1/../../../../arm-none-eabi/lib/thumb/v7e-m+fp/hard\libc.a
+END GROUP
+                0x00000400                        _Min_Stack_Size = 0x400
+                0x10010000                        _estack = (ORIGIN (DTCM) + LENGTH (DTCM))
+
+.text           0x20000000   0x37ba5c load address 0x08000000
+ *(.text)
+ .text          0x20000000        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\ccS7x2gd.o
+ *(.text*)
+ .text.task1    0x20000000   0x164a86 C:\Users\YASHWA~1\AppData\Local\Temp\ccS7x2gd.o
+                0x20000000                task1
+ .text.task2    0x20164a86   0x216fc8 C:\Users\YASHWA~1\AppData\Local\Temp\ccS7x2gd.o
+                0x20164a86                task2
+ .text.main     0x2037ba4e        0xe C:\Users\YASHWA~1\AppData\Local\Temp\ccS7x2gd.o
+                0x2037ba4e                main
+
+.glue_7         0x2037ba5c        0x0 load address 0x0837ba5c
+ .glue_7        0x2037ba5c        0x0 linker stubs
+
+.glue_7t        0x2037ba5c        0x0 load address 0x0837ba5c
+ .glue_7t       0x2037ba5c        0x0 linker stubs
+
+.vfp11_veneer   0x2037ba5c        0x0 load address 0x0837ba5c
+ .vfp11_veneer  0x2037ba5c        0x0 linker stubs
+
+.v4_bx          0x2037ba5c        0x0 load address 0x0837ba5c
+ .v4_bx         0x2037ba5c        0x0 linker stubs
+
+.iplt           0x2037ba5c        0x0 load address 0x0837ba5c
+ .iplt          0x2037ba5c        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\ccS7x2gd.o
+
+.rel.dyn        0x2037ba5c        0x0 load address 0x0837ba5c
+ .rel.iplt      0x2037ba5c        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\ccS7x2gd.o
+
+.data           0x2037ba5c        0x0 load address 0x0837ba5c
+ *(.data)
+ .data          0x2037ba5c        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\ccS7x2gd.o
+
+.igot.plt       0x2037ba5c        0x0 load address 0x0837ba5c
+ .igot.plt      0x2037ba5c        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\ccS7x2gd.o
+
+.bss            0x2037ba5c        0x0 load address 0x0837ba5c
+                0x2037ba5c                        __bss_start__ = .
+ *(.bss)
+ .bss           0x2037ba5c        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\ccS7x2gd.o
+                0x2037ba5c                        __bss_end__ = .
+
+.stack          0x10000000      0x400
+                0x10000400                        . = (. + _Min_Stack_Size)
+ *fill*         0x10000000      0x400 
+OUTPUT(firmware.elf elf32-littlearm)
+LOAD linker stubs
+
+.debug_info     0x00000000       0x69
+ .debug_info    0x00000000       0x69 C:\Users\YASHWA~1\AppData\Local\Temp\ccS7x2gd.o
+
+.debug_abbrev   0x00000000       0x5b
+ .debug_abbrev  0x00000000       0x5b C:\Users\YASHWA~1\AppData\Local\Temp\ccS7x2gd.o
+
+.debug_aranges  0x00000000       0x30
+ .debug_aranges
+                0x00000000       0x30 C:\Users\YASHWA~1\AppData\Local\Temp\ccS7x2gd.o
+
+.debug_rnglists
+                0x00000000       0x24
+ .debug_rnglists
+                0x00000000       0x24 C:\Users\YASHWA~1\AppData\Local\Temp\ccS7x2gd.o
+
+.debug_line     0x00000000       0x6f
+ .debug_line    0x00000000       0x6f C:\Users\YASHWA~1\AppData\Local\Temp\ccS7x2gd.o
+
+.debug_str      0x00000000       0xc2
+ .debug_str     0x00000000       0xc2 C:\Users\YASHWA~1\AppData\Local\Temp\ccS7x2gd.o
+
+.comment        0x00000000       0x45
+ .comment       0x00000000       0x45 C:\Users\YASHWA~1\AppData\Local\Temp\ccS7x2gd.o
+                                 0x46 (size before relaxing)
+
+.ARM.attributes
+                0x00000000       0x34
+ .ARM.attributes
+                0x00000000       0x34 C:\Users\YASHWA~1\AppData\Local\Temp\ccS7x2gd.o
+
+.debug_frame    0x00000000       0x74
+ .debug_frame   0x00000000       0x74 C:\Users\YASHWA~1\AppData\Local\Temp\ccS7x2gd.o

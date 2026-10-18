@@ -1,0 +1,73 @@
+
+There are no discarded input sections
+
+Memory Configuration
+
+Name             Origin             Length             Attributes
+DTCM             0x10000000         0x00010000         xrw
+SRAM1            0x20000000         0x02000000         xrw
+FLASH            0x08000000         0x02000000         xr
+*default*        0x00000000         0xffffffff
+
+Linker script and memory map
+
+LOAD C:\Users\YASHWA~1\AppData\Local\Temp\cceFm9SS.o
+                0x00000400                        _Min_Stack_Size = 0x400
+                0x10010000                        _estack = (ORIGIN (DTCM) + LENGTH (DTCM))
+
+.text           0x20000000   0x2c9520 load address 0x08000000
+ *(.text)
+ .text          0x20000000        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\cceFm9SS.o
+ *(.text*)
+ .text.task1    0x20000000    0xb254a C:\Users\YASHWA~1\AppData\Local\Temp\cceFm9SS.o
+                0x20000000                task1
+ .text.task2    0x200b254a   0x216fc8 C:\Users\YASHWA~1\AppData\Local\Temp\cceFm9SS.o
+                0x200b254a                task2
+ .text.main     0x202c9512        0xe C:\Users\YASHWA~1\AppData\Local\Temp\cceFm9SS.o
+                0x202c9512                main
+
+.glue_7         0x202c9520        0x0 load address 0x082c9520
+ .glue_7        0x202c9520        0x0 linker stubs
+
+.glue_7t        0x202c9520        0x0 load address 0x082c9520
+ .glue_7t       0x202c9520        0x0 linker stubs
+
+.vfp11_veneer   0x202c9520        0x0 load address 0x082c9520
+ .vfp11_veneer  0x202c9520        0x0 linker stubs
+
+.v4_bx          0x202c9520        0x0 load address 0x082c9520
+ .v4_bx         0x202c9520        0x0 linker stubs
+
+.iplt           0x202c9520        0x0 load address 0x082c9520
+ .iplt          0x202c9520        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\cceFm9SS.o
+
+.rel.dyn        0x202c9520        0x0 load address 0x082c9520
+ .rel.iplt      0x202c9520        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\cceFm9SS.o
+
+.data           0x202c9520        0x0 load address 0x082c9520
+ *(.data)
+ .data          0x202c9520        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\cceFm9SS.o
+
+.igot.plt       0x202c9520        0x0 load address 0x082c9520
+ .igot.plt      0x202c9520        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\cceFm9SS.o
+
+.bss            0x202c9520        0x0 load address 0x082c9520
+                0x202c9520                        __bss_start__ = .
+ *(.bss)
+ .bss           0x202c9520        0x0 C:\Users\YASHWA~1\AppData\Local\Temp\cceFm9SS.o
+                0x202c9520                        __bss_end__ = .
+
+.stack          0x10000000      0x400
+                0x10000400                        . = (. + _Min_Stack_Size)
+ *fill*         0x10000000      0x400 
+OUTPUT(firmware.elf elf32-littlearm)
+LOAD linker stubs
+
+.comment        0x00000000       0x45
+ .comment       0x00000000       0x45 C:\Users\YASHWA~1\AppData\Local\Temp\cceFm9SS.o
+                                 0x46 (size before relaxing)
+
+.ARM.attributes
+                0x00000000       0x2e
+ .ARM.attributes
+                0x00000000       0x2e C:\Users\YASHWA~1\AppData\Local\Temp\cceFm9SS.o

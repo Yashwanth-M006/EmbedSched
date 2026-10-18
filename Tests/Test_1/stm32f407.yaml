@@ -1,0 +1,134 @@
+# chips/stm32f407.yaml
+# STM32F407VG chip profile for the Firmware Efficiency Analyzer.
+#
+# Sources:
+#   - STM32F407 Reference Manual (RM0090), Rev 20
+#   - STM32F407 Datasheet (DS8626), Rev 8
+#   - ARMv7-M Architecture Reference Manual (DDI0403E)
+#
+# NOTE ON CACHE:
+#   STM32F407 (Cortex-M4) has NO instruction or data cache.
+#   All flash accesses go through the ART Accelerator (Adaptive
+#   Real-Time memory accelerator), which is an 8x 128-bit line
+#   prefetch buffer, NOT a true cache. It has no associativity
+#   or eviction — it prefetches sequential flash lines into a
+#   buffer. For the purposes of this analyzer:
+#     - cache.present: false
+#     - Flash latency is purely determined by wait states (ART off)
+#       or typically 0 effective WS with ART enabled for sequential
+#       access. We model worst-case (ART off) for the timing model.
+
+name: STM32F407VG
+core: cortex-m4
+vendor: STMicroelectronics
+clock_max_mhz: 168
+
+cache:
+  present: false           # M4 has no true I/D cache
+  art_accelerator: true    # 8x128-bit prefetch buffer (ART)
+  # With ART enabled, sequential flash reads are 0-wait effective.
+  # Without ART, or on random access, wait states apply.
+  # Analyzer should note ART does not help ISR cold-entry jitter
+  # because the ISR vector is a random (non-sequential) access.
+
+memory_regions:
+  FLASH:
+    origin: 0x08000000
+    size_kb: 1024
+    bus: AHB
+    wait_states_ref: flash_wait_states
+    dma_accessible: false
+    notes: "Cortex-M4 AXI flash via AHB. No ITCM on F407."
+
+  # STM32F407 has NO ITCM or DTCM.
+  # Both SRAM banks are on the AHB bus matrix.
+
+  SRAM1:
+    origin: 0x20000000
+    size_kb: 112
+    wait_states: 0
+    bus_port: AHB_S0
+    dma_accessible: true
+    notes: "Main SRAM. DMA1, DMA2, and CPU all on AHB_S0."
+
+  SRAM2:
+    origin: 0x2001C000
+    size_kb: 16
+    wait_states: 0
+    bus_port: AHB_S0
+    dma_accessible: true
+    notes: "Same AHB port as SRAM1 on F407 — no bus isolation benefit."
+
+  CCM:
+    origin: 0x10000000
+    size_kb: 64
+    wait_states: 0
+    bus_port: CCM_ONLY
+    dma_accessible: false
+    notes: >
+      Core-Coupled Memory. Zero wait state, CPU-only access via
+      dedicated data bus. DMA cannot reach CCM. Ideal for stack
+      and frequently-used data. Functionally equivalent to DTCM
+      on M7 parts.
+
+flash_wait_states:
+  # STM32F407 RM0090 Table 3 — VDD 2.7-3.6V (VOS1)
+  # ART accelerator OFF (worst case for timing model)
+  - { freq_max_mhz: 30,  ws: 0 }
+  - { freq_max_mhz: 60,  ws: 1 }
+  - { freq_max_mhz: 90,  ws: 2 }
+  - { freq_max_mhz: 120, ws: 3 }
+  - { freq_max_mhz: 150, ws: 4 }
+  - { freq_max_mhz: 168, ws: 5 }
+
+exception_entry_cycles: 12
+# Source: ARMv7-M ARM, Section B1.5.6
+# "The processor pushes eight registers (r0-r3, r12, lr, pc, xpsr)
+#  onto the stack as part of the exception entry sequence."
+# Minimum 12 cycles for stack push + vector fetch + pipeline refill.
+# Real measured latency is typically 12-15 cycles depending on
+# alignment, bus state, and whether FPU lazy stacking is enabled.
+
+vector_table_section: .isr_vector
+startup_file_pattern: "startup*.s"
+
+bus_matrix:
+  # STM32F407 AHB multi-layer bus matrix (RM0090 Fig 1)
+  # Masters: CPU I-bus, CPU D-bus, DMA1, DMA2, Ethernet DMA, USB OTG HS DMA
+  # Slaves:  Flash, SRAM1, SRAM2, CCM (CPU only), AHB1/2/3 peripherals
+  #
+  # IMPORTANT for F407 vs F7:
+  #   - F407 has no ITCM/DTCM — all code and data goes through AHB
+  #   - SRAM1 and SRAM2 are on the SAME bus matrix slave port (AHB_S0)
+  #   - There is NO bus-isolation benefit from moving a DMA buffer
+  #     from SRAM1 to SRAM2 on F407 (unlike F7 which has separate ports)
+  #   - For DMA-CPU bus isolation: use CCM for CPU-only data, SRAM1/2 for DMA
+  contending_pairs:
+    - masters: [CPU_D, CPU_I, DMA1, DMA2]
+      slave: AHB_S0
+      note: "SRAM1 + SRAM2 share AHB_S0 — all masters contend here"
+    - masters: [CPU_I, CPU_D]
+      slave: FLASH
+      note: "Flash fetches contend between I-bus and D-bus (literal pool loads)"
+
+  isolation_options:
+    - "Place stack and CPU-hot data in CCM (0x10000000) — DMA cannot reach it"
+    - "No equivalent of ITCM on F407 — ISRs always execute from Flash (AHB)"
+    - "ART accelerator helps sequential fetch but not cold ISR entry jitter"
+
+# Analyzer behavior notes for this chip
+analyzer_notes:
+  no_itcm: >
+    STM32F407 has no ITCM. Rule 1 (ISR placement) cannot recommend
+    ITCM placement. Instead, the analyzer should check:
+    (a) ART accelerator enabled in FLASH_ACR (bit 9)?
+    (b) Prefetch enabled (bit 8)?
+    If not, ISRs suffer full flash wait states on every access.
+    Best achievable on F407: enable ART + prefetch, ensure IRQ
+    handlers fit within 128-bit (4-word) prefetch buffer boundaries.
+
+  stack_in_ccm: >
+    The stack can be placed in CCM (0x10000000) for zero-wait-state
+    push/pop and to avoid bus contention with DMA. This is the F407
+    equivalent of the M7 DTCM stack placement optimization.
+    Check linker script: is the STACK section targeting CCM or SRAM1?

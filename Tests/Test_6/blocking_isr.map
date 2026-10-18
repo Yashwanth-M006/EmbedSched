@@ -1,0 +1,92 @@
+Archive member included to satisfy reference by file (symbol)
+
+Memory Configuration
+
+Name             Origin             Length             Attributes
+FLASH            0x0000000008000000 0x0000000000100000 xr
+RAM              0x0000000020000000 0x0000000000020000 xrw
+
+Linker script and memory map
+
+                0x0000000008000000                . = 0x8000000
+
+.isr_vector     0x0000000008000000       0xb8
+                0x0000000008000000                . = ALIGN (0x4)
+ *(.isr_vector)
+ .isr_vector    0x0000000008000000       0xb8 project6_blocking_isr/build/startup.o
+                0x0000000008000000                __isr_vector
+
+.text           0x00000000080000b8      0x24c
+                0x00000000080000b8                . = ALIGN (0x4)
+ *(.text)
+ *(.text*)
+ .text          0x0000000008000100       0x1c project6_blocking_isr/build/startup.o
+                0x0000000008000100                Reset_Handler
+ .text          0x0000000008000108        0x4 project6_blocking_isr/build/startup.o
+                0x0000000008000108                NMI_Handler
+ .text          0x000000000800010c        0x4 project6_blocking_isr/build/startup.o
+                0x000000000800010c                HardFault_Handler
+ .text          0x0000000008000110        0x4 project6_blocking_isr/build/startup.o
+                0x0000000008000110                MemManage_Handler
+ .text          0x0000000008000114        0x4 project6_blocking_isr/build/startup.o
+                0x0000000008000114                BusFault_Handler
+ .text          0x0000000008000118       0x10 project6_blocking_isr/build/main.o
+                0x0000000008000118                system_init
+ .text          0x0000000008000124       0x10 project6_blocking_isr/build/main.o
+                0x0000000008000124                uart_init
+ .text          0x0000000008000130       0x8c project6_blocking_isr/build/main.o
+                0x0000000008000130                TIM3_IRQHandler
+ .text          0x00000000080001bc       0x10 project6_blocking_isr/build/main.o
+                0x00000000080001bc                main
+ .text          0x00000000080001ec       0x18 project6_blocking_isr/build/hal_delay.o
+                0x00000000080001ec                HAL_GetTick
+ .text          0x0000000008000208       0x40 project6_blocking_isr/build/hal_delay.o
+                0x0000000008000208                HAL_Delay
+ .text          0x0000000008000248       0xbc project6_blocking_isr/build/hal_uart.o
+                0x0000000008000248                HAL_UART_Transmit
+
+.rodata         0x0000000008000308        0x0
+                0x0000000008000308                . = ALIGN (0x4)
+
+.data           0x0000000020000000        0x0
+                0x0000000020000000                . = ALIGN (0x4)
+                0x0000000020000000                _sdata = .
+                0x0000000020000000                _edata = .
+
+.bss            0x0000000020000000       0xa0
+                0x0000000020000000                . = ALIGN (0x4)
+                0x0000000020000000                _sbss = .
+ *(.bss)
+ *(.bss*)
+ .bss           0x0000000020000000        0x4 project6_blocking_isr/build/hal_delay.o
+                0x0000000020000000                uwTick
+ .bss           0x0000000020000004        0x4 project6_blocking_isr/build/hal_delay.o
+                0x0000000020000004                uwTickPrio
+ .bss           0x0000000020000008       0x98 project6_blocking_isr/build/main.o
+                0x0000000020000008                tx_buffer
+                0x00000000200000a0                _ebss = .
+                0x00000000200000a0                __bss_end__ = .
+
+      .stack          0x0000000020014c00      0x400
+                0x0000000020014c00                . = ALIGN (0x8)
+                0x0000000020014c00                __stack_start = .
+                0x0000000020015000                . = (. + _Min_Stack_Size)
+                0x0000000020015000                . = ALIGN (0x8)
+                0x0000000020015000                __stack_end = .
+
+.heap           0x0000000020015000      0x200
+                0x0000000020015000                . = ALIGN (0x8)
+                0x0000000020015000                end = .
+                0x0000000020015000                _end = .
+                0x0000000020015200                . = (. + _Min_Heap_Size)
+                0x0000000020015200                . = ALIGN (0x8)
+                0x0000000020015200                _heap_end = .
+
+                0x000000002001c000                _estack = 0x2001c000
+                0x0000000000000400                _Min_Stack_Size = 0x400
+                0x0000000020014c00                __stack_start
+                0x0000000020015000                __stack_end
+                0x00000000200000a0                __bss_end__
+                0x0000000020000000                _sdata
+                0x0000000020000000                _edata
+                0x0000000020000000                __bss_start__

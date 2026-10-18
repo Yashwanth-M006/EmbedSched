@@ -1,0 +1,245 @@
+# expected_output.txt — Project 2: isr_in_itcm
+#
+# Run command:
+#   python main.py \
+#     --elf     project2_isr_in_itcm/build/firmware.elf \
+#     --map     project2_isr_in_itcm/build/firmware.map \
+#     --ld      project2_isr_in_itcm/stm32f746_itcm.ld \
+#     --chip    project2_isr_in_itcm/chips/stm32f746.yaml \
+#     --su-dir  project2_isr_in_itcm/su \
+#     --startup project2_isr_in_itcm/src/startup.s \
+#     --freq-mhz 216
+#
+# ══════════════════════════════════════════════════════════════════════
+
+OVERALL SCORE: 80 / 100
+  Deduction: dma_bus_contention (-20) for spi_rx_buf in SRAM1
+  All other rules: PASS
+
+# ══════════════════════════════════════════════════════════════════════
+# SECTION A: MUST FIRE
+# ══════════════════════════════════════════════════════════════════════
+
+[WARNING] [HEURISTIC] dma_bus_contention
+  Symbol  : spi_rx_buf
+  Address : 0x20010000
+  Region  : SRAM1 (bus port AHB_S1)
+  Size    : 256 bytes (.dma_buffers_s1 section)
+  Aligned : YES (32-byte aligned: 0x20010000 % 32 = 0)
+
+  Required message:
+    spi_rx_buf at 0x20010000 (SRAM1, AHB_S1) is a DMA buffer.
+    SRAM1 is on AHB_S1 — same bus matrix port as CPU D-bus accesses.
+    DMA transfers to spi_rx_buf will contend with CPU SRAM1 accesses.
+    Estimated bandwidth degradation: ~30–35% CPU throughput loss during
+    active DMA transfers (per STM32F7 bus matrix arbitration behavior).
+    Fix: move spi_rx_buf to SRAM2 (.dma_buffers_s2 section).
+         SRAM2 is on AHB_S2 — separate port, zero contention with CPU.
+
+  What this tests in analyzer:
+    - Heuristic buffer detection via section name (.dma_buffers_s1)
+    - Bus port lookup for SRAM1 from chip profile: bus_port = AHB_S1
+    - Contending pair check: CPU_D + DMA both on AHB_S1 = contention
+    - Must NOT flag uart_tx_dma_buf or adc_dma_buf (they are in SRAM2)
+
+[INFO] [CALCULATED] isr_in_itcm_confirmed
+  Handlers: TIM2_IRQHandler, DMA2_Stream0_IRQHandler, SPI1_IRQHandler
+  Addresses: 0x00000000, 0x0000003C, 0x00000090
+  Region: ITCM [0x00000000, 0x00004000)
+
+  Required message:
+    TIM2_IRQHandler        at 0x00000000 → ITCM (correct placement)
+    DMA2_Stream0_IRQHandler at 0x0000003C → ITCM (correct placement)
+    SPI1_IRQHandler        at 0x00000090 → ITCM (correct placement)
+    Calculated entry latency: ~55.6 ns (12 cy × 4.63 ns/cy at 216 MHz)
+    vs flash cold-miss worst case: ~351.9 ns
+    Jitter: ±0 ns (ITCM has no cache variability)
+    These handlers are optimally placed.
+
+[INFO] [STATIC] hot_functions_in_itcm
+  Symbols: filter_sample (0x000000E8), pid_update (0x00000134),
+           control_loop (0x00000204)
+  Region: ITCM
+
+  Required message:
+    3 non-ISR functions are in ITCM — detected as intended hot-path
+    placement. All are reachable from the main control loop (call graph).
+    Placement is consistent with deterministic real-time control design.
+
+[INFO] [STATIC] itcm_section_budget
+  .itcm_text: 700 bytes used / 16,384 bytes capacity (4.3%)
+  Required message:
+    ITCM section well within budget. Headroom: 15,684 bytes.
+
+[INFO] [STATIC] stack_in_dtcm_confirmed
+  __stack_start: 0x20000030 → DTCM [0x20000000, 0x20010000)
+  Required message:
+    Stack in DTCM — correct placement on Cortex-M7.
+    DTCM is CPU-only (D-bus), DMA-isolated. Stack push/pop: 0 wait states.
+    Stack size: 2048 bytes. Usage: 80B (3.9%). Headroom: 1968 bytes.
+
+[INFO] [STATIC] dma_buffers_in_sram2_correct
+  uart_tx_dma_buf: 0x2004C000 (SRAM2, AHB_S2) — 256 bytes, 32B aligned
+  adc_dma_buf:     0x2004C100 (SRAM2, AHB_S2) — 256 bytes, 32B aligned
+  Required message:
+    uart_tx_dma_buf and adc_dma_buf are correctly placed in SRAM2 (AHB_S2).
+    CPU uses SRAM1 (AHB_S1) — separate bus matrix port → zero contention.
+
+# ══════════════════════════════════════════════════════════════════════
+# SECTION B: MUST NOT FIRE
+# ══════════════════════════════════════════════════════════════════════
+
+[A1] MUST NOT fire: isr_in_flash  (Rule 1 WARNING)
+  Why: TIM2_IRQHandler (0x00000000), DMA2_Stream0_IRQHandler (0x0000003C),
+       SPI1_IRQHandler (0x00000090) are all in ITCM range.
+       Rule 1 fires ONLY when ISR address ∈ [0x08000000, 0x08100000).
+       These addresses are in [0x00000000, 0x00004000) = ITCM.
+  If this fires → BUG: address range check fails to distinguish ITCM from flash.
+
+[A2] MUST NOT fire: itcm_overflow  (Rule 3 WARNING/CRITICAL)
+  Why: .itcm_text = 700 bytes / 16,384 bytes = 4.3%. Far below any threshold.
+  If this fires → BUG: section size extraction error or wrong ITCM capacity.
+
+[A3] MUST NOT fire: unaligned_dma_buffer  (Rule 5 INFO)
+  Why: uart_tx_dma_buf at 0x2004C000 → 0x2004C000 % 32 = 0 ✓
+       adc_dma_buf at 0x2004C100     → 0x2004C100 % 32 = 0 ✓
+       spi_rx_buf at 0x20010000      → 0x20010000 % 32 = 0 ✓
+       All three DMA buffers are 32-byte aligned.
+  If this fires → BUG: alignment arithmetic error.
+
+[A4] MUST NOT fire: stack_overflow_risk  (Rule 4 CRITICAL)
+  Why: Worst-case chain = main(16) + control_loop(24) + pid_update(40) = 80B
+       Budget = 2048B. Usage = 3.9%.
+  If this fires → BUG: stack threshold applied incorrectly.
+
+[A5] MUST NOT fire: dma_buffer_in_non_dma_region  (ERROR)
+  Why: uart_tx_dma_buf and adc_dma_buf are in SRAM2 (dma_accessible: true).
+       spi_rx_buf is in SRAM1 (dma_accessible: true).
+       No DMA buffer is in ITCM or DTCM (which are dma_accessible: false).
+  If this fires → BUG: wrong region classification.
+
+[A6] MUST NOT flag veneer stubs as ISRs or as misplaced functions
+  Why: The linker emits __control_loop_veneer at 0x08000358 (flash).
+       This is a linker-generated trampoline, not user code.
+       Symbol name ends in '_veneer' — must be ignored by the rule engine.
+       Flagging it as "function in flash that should be in ITCM" is wrong.
+  If this fires → BUG: veneer symbols not filtered in region_classifier.py
+
+# ══════════════════════════════════════════════════════════════════════
+# SECTION C: MEMORY MAP
+# ══════════════════════════════════════════════════════════════════════
+
+MEMORY MAP:
+  FLASH            : 1,808 bytes / 1,048,576 bytes (0.2%)
+                     [includes vector table + non-ITCM code + ITCM LMA copy]
+  ITCM (.itcm_text): 700 bytes / 16,384 bytes (4.3%)
+                     [TIM2_IRQHandler, DMA2_Stream0_IRQHandler, SPI1_IRQHandler,
+                      filter_sample, pid_update, control_loop]
+  DTCM (.data)     : 48 bytes  (initialized globals)
+  DTCM (.bss)      : ~30 bytes (zero-init globals)
+  DTCM (.stack)    : 2,048 bytes
+  SRAM1 (.dma_s1)  : 256 bytes (spi_rx_buf — misplaced, Rule 2 fires)
+  SRAM2 (.dma_s2)  : 512 bytes (uart_tx_dma_buf + adc_dma_buf — correct)
+
+Key addresses:
+  TIM2_IRQHandler        : 0x00000000  ITCM
+  DMA2_Stream0_IRQHandler: 0x0000003C  ITCM
+  SPI1_IRQHandler        : 0x00000090  ITCM
+  filter_sample          : 0x000000E8  ITCM
+  pid_update             : 0x00000134  ITCM
+  control_loop           : 0x00000204  ITCM
+  system_init            : 0x08000xxx  FLASH (correct — cold startup)
+  uart_init              : 0x08000xxx  FLASH (correct — cold startup)
+  main                   : 0x08000xxx  FLASH (correct — calls into ITCM)
+  uart_tx_dma_buf        : 0x2004C000  SRAM2 (correct)
+  adc_dma_buf            : 0x2004C100  SRAM2 (correct)
+  spi_rx_buf             : 0x20010000  SRAM1 (misplaced — Rule 2)
+  __stack_start          : 0x20000030  DTCM  (correct)
+  _sitcm                 : 0x00000000  ITCM start
+  _eitcm                 : 0x000002BC  ITCM end (700 bytes)
+  _itcm_lma              : 0x08000360  Flash LMA of ITCM content
+
+# ══════════════════════════════════════════════════════════════════════
+# SECTION D: CALL GRAPH
+# ══════════════════════════════════════════════════════════════════════
+
+CALL GRAPH:
+  main (flash)
+  ├── system_init (flash, leaf)
+  ├── uart_init (flash, leaf)
+  └── [loop] control_loop (ITCM)
+               ├── filter_sample (ITCM, leaf)
+               └── pid_update (ITCM, leaf)
+
+ISR handlers (not reachable from main; triggered by hardware):
+  TIM2_IRQHandler (ITCM, leaf)
+  DMA2_Stream0_IRQHandler (ITCM, leaf — reads adc_dma_buf)
+  SPI1_IRQHandler (ITCM, leaf — writes spi_rx_buf)
+
+Cross-region call: main (flash) → control_loop (ITCM)
+  This requires a veneer stub: __control_loop_veneer at 0x08000358 (flash)
+  The veneer is linker-generated and must be ignored by the analyzer.
+
+# ══════════════════════════════════════════════════════════════════════
+# SECTION E: STACK USAGE (.su)
+# ══════════════════════════════════════════════════════════════════════
+
+STACK USAGE:
+  TIM2_IRQHandler          :  4B  static
+  DMA2_Stream0_IRQHandler  : 16B  static
+  SPI1_IRQHandler          : 16B  static
+  filter_sample            : 24B  static
+  pid_update               : 40B  static
+  control_loop             : 24B  static
+  system_init              : 16B  static
+  uart_init                : 24B  static
+  main                     : 16B  static
+
+  Worst-case simultaneous depth:
+    main(16) + control_loop(24) + pid_update(40) = 80B
+  Budget: 2048B  Usage: 3.9%  → PASS
+
+# ══════════════════════════════════════════════════════════════════════
+# SECTION F: KEY DIFFERENCES FROM PROJECTS 1 AND 4
+# ══════════════════════════════════════════════════════════════════════
+
+vs Project 4 (no_stack_section):
+  Project 4: no _Min_Stack_Size, no STACK section → WARNING fires
+  Project 2: _Min_Stack_Size = 0x800, .stack in DTCM → no WARNING
+
+vs Project 1 (golden_baseline, F407):
+  Project 1: no ITCM (F407), ISRs always in flash → INFO about ART
+  Project 2: ITCM present (F746), ISRs explicitly in ITCM → Rule 1 PASS
+  Project 1: no SRAM2 bus isolation (F407 AHB_S0 covers all SRAM)
+  Project 2: SRAM1/SRAM2 on separate ports (F746) → bus isolation possible
+
+Primary new test in Project 2 vs Project 1:
+  Rule 1 address discrimination: ITCM range vs Flash range.
+  A tool that passes Project 1 (no ITCM on F407) but fails Project 2
+  has a chip-specific rule path bug — it handles the F4 "no ITCM" case
+  but fails the F7 "ITCM present" case.
+
+# ══════════════════════════════════════════════════════════════════════
+# SECTION G: PASS CRITERIA CHECKLIST
+# ══════════════════════════════════════════════════════════════════════
+
+  [ ] Score: 80/100 (one deduction for spi_rx_buf bus contention)
+  [ ] dma_bus_contention WARNING fires for spi_rx_buf (SRAM1)
+  [ ] isr_in_flash WARNING does NOT fire for any of the three ISRs
+  [ ] itcm_overflow does NOT fire (700B / 16384B = 4.3%)
+  [ ] unaligned_dma_buffer does NOT fire (all buffers 32B aligned)
+  [ ] stack_overflow_risk does NOT fire (80B / 2048B = 3.9%)
+  [ ] veneer stub __control_loop_veneer is ignored (not flagged)
+  [ ] uart_tx_dma_buf and adc_dma_buf not flagged (SRAM2, correct)
+  [ ] Tool does not crash on processing .itcm_text section
+  [ ] Tool correctly identifies _sitcm, _eitcm, _itcm_lma symbols
+
+FAILURE TRIAGE:
+  isr_in_flash fires incorrectly → address range check bug in
+    rules/isr_placement.py — check: addr in chip ITCM range before flash check
+  veneer flagged → symbol filter missing in region_classifier.py
+    add: if symbol.name.endswith('_veneer'): skip
+  dma_bus_contention fires for all buffers → section name lookup wrong,
+    .dma_buffers_s2 should map to SRAM2 not SRAM1
+  dma_bus_contention does not fire for spi_rx_buf → .dma_buffers_s1
+    section not in heuristic buffer detection patterns

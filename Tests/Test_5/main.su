@@ -1,0 +1,13 @@
+src/main.c:207:6:TIM3_IRQHandler	16	static
+src/main.c:226:13:pack_record	152	static
+src/main.c:270:13:format_timestamp	88	static
+src/main.c:301:13:isr_log	88	static
+src/main.c:333:13:apply_fir	136	static
+src/main.c:357:13:apply_iir	120	static
+src/main.c:390:13:signal_process	32	static
+src/main.c:412:17:adc_read_raw	16	static
+src/main.c:429:13:log_event	48	static
+src/main.c:454:13:main_task	24	static
+src/main.c:482:13:system_init	16	static
+src/main.c:501:13:sensor_init	24	static
+src/main.c:537:5:main	16	static

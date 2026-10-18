@@ -1,0 +1,99 @@
+# chips/stm32f407.yaml
+# STM32F407VG chip profile for the Firmware Efficiency Analyzer.
+#
+# Sources:
+#   - STM32F407 Reference Manual (RM0090), Rev 20
+#   - STM32F407 Datasheet (DS8626), Rev 8
+#   - ARMv7-M Architecture Reference Manual (DDI0403E)
+#
+# Same silicon as Projects 1 and 4. Project 3 differs in firmware
+# behaviour (recursion), not chip architecture.
+
+name: STM32F407VG
+core: cortex-m4
+vendor: STMicroelectronics
+clock_max_mhz: 168
+
+cache:
+  present: false
+  art_accelerator: true
+  # ART: 8x128-bit prefetch buffer. Helps sequential flash access.
+  # Does NOT eliminate cold-entry ISR jitter on random vector dispatch.
+
+memory_regions:
+  FLASH:
+    origin: 0x08000000
+    size_kb: 1024
+    bus: AHB
+    wait_states_ref: flash_wait_states
+    dma_accessible: false
+
+  SRAM1:
+    origin: 0x20000000
+    size_kb: 112
+    wait_states: 0
+    bus_port: AHB_S0
+    dma_accessible: true
+    notes: "Main SRAM. CPU D-bus, DMA1, DMA2 all on AHB_S0."
+
+  SRAM2:
+    origin: 0x2001C000
+    size_kb: 16
+    wait_states: 0
+    bus_port: AHB_S0
+    dma_accessible: true
+    notes: "Same AHB port as SRAM1 on F407 — no bus isolation benefit."
+
+  CCM:
+    origin: 0x10000000
+    size_kb: 64
+    wait_states: 0
+    bus_port: CCM_ONLY
+    dma_accessible: false
+    notes: >
+      Core-Coupled Memory. Zero wait state, CPU-only via dedicated data bus.
+      DMA cannot reach CCM. Ideal for stack on F407.
+      In Project 3 the stack is in SRAM1 (suboptimal) — analyzer notes CCM
+      is available. INFO level only; CRITICAL issue is recursion.
+
+flash_wait_states:
+  # STM32F407 RM0090 Table 3 — VDD 2.7-3.6V (VOS1), ART off (worst case)
+  - { freq_max_mhz: 30,  ws: 0 }
+  - { freq_max_mhz: 60,  ws: 1 }
+  - { freq_max_mhz: 90,  ws: 2 }
+  - { freq_max_mhz: 120, ws: 3 }
+  - { freq_max_mhz: 150, ws: 4 }
+  - { freq_max_mhz: 168, ws: 5 }
+
+exception_entry_cycles: 12
+# Source: ARMv7-M ARM Section B1.5.6
+
+vector_table_section: .isr_vector
+startup_file_pattern: "startup*.s"
+
+bus_matrix:
+  contending_pairs:
+    - masters: [CPU_D, CPU_I, DMA1, DMA2]
+      slave: AHB_S0
+      note: "SRAM1 + SRAM2 both on AHB_S0 — all masters contend here"
+
+  isolation_options:
+    - "Place stack in CCM (0x10000000) — DMA cannot reach it"
+    - "No ITCM on F407 — ISRs always execute from Flash"
+
+analyzer_notes:
+  no_itcm: >
+    STM32F407 has no ITCM. Rule 1 must NOT recommend ITCM placement.
+    Instead: check ART accelerator + prefetch are enabled.
+
+  project3_recursion_priority: >
+    The primary finding is recursion (CRITICAL), not ISR placement (WARNING)
+    or stack location (INFO). Report ordering must reflect this.
+    Recursion makes the stack unbounded regardless of _Min_Stack_Size.
+
+  isr_latency_at_168mhz:
+    cycle_ns: 5.95
+    hw_entry_cycles: 12
+    flash_ws_at_168mhz: 5
+    calculated_entry_ns: 119.0
+    source: "ARMv7-M ARM B1.5.6 + STM32F407 RM0090 Table 3"

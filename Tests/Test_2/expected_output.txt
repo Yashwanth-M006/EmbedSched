@@ -1,0 +1,251 @@
+# expected_output.txt — Project 1: golden_baseline
+#
+# This is the TEST ORACLE. Your analyzer's output must match this
+# document exactly in terms of which findings fire and which don't.
+#
+# Run command:
+#   python main.py \
+#     --elf    project1_golden_baseline/build/firmware.elf \
+#     --map    project1_golden_baseline/build/firmware.map \
+#     --ld     project1_golden_baseline/golden.ld \
+#     --chip   project1_golden_baseline/chips/stm32f407.yaml \
+#     --su-dir project1_golden_baseline/su \
+#     --startup project1_golden_baseline/src/startup.s \
+#     --freq-mhz 168
+#
+# ══════════════════════════════════════════════════════════════════════
+
+OVERALL SCORE: 100 / 100   (or as close as your scoring model allows)
+  No deductions. This is the reference pass case.
+
+# ══════════════════════════════════════════════════════════════════════
+# SECTION A: FINDINGS THAT MUST NOT FIRE
+# These are the false-positive tests. If any of these fire, the
+# corresponding rule or parser has a bug.
+# ══════════════════════════════════════════════════════════════════════
+
+MUST NOT FIRE:
+==============
+
+[A1] stack_overflow_risk  (CRITICAL)
+     Why it must NOT fire:
+       Worst-case call chain: main(16) + main_loop(32) + process_frame(64)
+         + crc_compute(32) = 144 bytes
+       Stack budget: _Min_Stack_Size = 0x800 = 2048 bytes (from golden.ld)
+       Usage: 144 / 2048 = 7.0%  → well below 80% warning threshold
+     If this fires → BUG in stack_analyzer.py or su_parser.py
+
+[A2] no_explicit_stack_section  (WARNING)
+     Why it must NOT fire:
+       golden.ld explicitly declares:
+         _Min_Stack_Size = 0x800;
+         .stack (NOLOAD) { __stack_start = .; . += _Min_Stack_Size; }
+       Both _Min_Stack_Size and __stack_start/__stack_end are present in .map
+     If this fires → BUG in ld_parser.py (fails to detect stack section)
+
+[A3] itcm_overflow  (CRITICAL / WARNING)
+     Why it must NOT fire:
+       STM32F407 has no ITCM. chip profile: no 'ITCM' key in memory_regions.
+       No .itcm_text section in golden.ld or firmware.map.
+       There is nothing to overflow.
+     If this fires → BUG in rules/itcm_overflow.py (chip-agnostic assumption)
+
+[A4] unaligned_dma_buffer  (INFO)
+     Why it must NOT fire:
+       g_rx_dma_buf and g_tx_dma_buf both use __attribute__((aligned(32))).
+       .map confirms: __dma_buffers_start = 0x20000040
+       0x20000040 % 32 = 0  → perfectly aligned.
+     If this fires → BUG in rules/dma_alignment.py (address arithmetic error)
+
+[A5] dma_buffer_in_non_dma_region  (ERROR)
+     Why it must NOT fire:
+       DMA buffers are in .dma_buffers section → SRAM1 (0x20000000).
+       SRAM1 is dma_accessible: true in chip profile.
+       CCM is dma_accessible: false — but NO DMA buffer is in CCM.
+       Stack is in CCM, which is correct and expected.
+     If this fires → BUG in region_classifier.py (misidentifying stack as DMA buf)
+
+[A6] dma_bus_contention  (WARNING/HEURISTIC)
+     Why it must NOT fire:
+       The contention rule fires when a DMA buffer and the CPU-hot stack
+       share the same bus port. Here:
+         DMA buffers: SRAM1 (AHB_S0) — correct, DMA-accessible
+         Stack: CCM (CCM_ONLY bus) — isolated from AHB entirely
+       There is NO CPU+DMA contention on the stack region.
+       The rule should only fire on F407 when DMA and CPU-heavy code
+       share SRAM1 exclusively with no CCM isolation. That is not the case here.
+     If this fires → BUG in bus_contention heuristic (over-triggering)
+
+[A7] isr_calls_blocking_function  (WARNING)
+     Why it must NOT fire:
+       DMA2_Stream0_IRQHandler: writes a register, sets flag, returns.
+       TIM2_IRQHandler: clears flag, increments counter, returns.
+       USART1_IRQHandler: reads SR, clears flag, returns.
+       None call uart_tx_byte, HAL_Delay, or any blocking function.
+     If this fires → BUG in blocklist matching (false positive)
+
+[A8] recursion_detected  (CRITICAL)
+     Why it must NOT fire:
+       The call graph is a strict DAG:
+         main → {system_init, uart_init, main_loop}
+         main_loop → {sensor_read, process_frame}
+         sensor_read → {adc_sample}
+         process_frame → {crc_compute, uart_tx_byte}
+         crc_compute → {}  (leaf — inner loops are NOT recursive calls)
+         adc_sample  → {}  (leaf)
+         uart_tx_byte→ {}  (leaf)
+       No back-edges exist. crc_compute has a nested for-loop but NO bl
+       instruction pointing to itself (verified via objdump).
+     If this fires → BUG in call_graph.py (mistaking a loop for recursion,
+                      or failure to distinguish branch vs bl instruction)
+
+# ══════════════════════════════════════════════════════════════════════
+# SECTION B: FINDINGS THAT MUST FIRE
+# These are expected INFO-level observations about chip-specific behavior.
+# None of these are warnings or criticals.
+# ══════════════════════════════════════════════════════════════════════
+
+MUST FIRE:
+==========
+
+[B1] isr_always_in_flash  (INFO)  [STATIC]
+     Trigger: STM32F407 chip profile has no ITCM region.
+              ISRs are unconditionally in Flash on this chip.
+     Required message:
+       - ISRs DMA2_Stream0_IRQHandler, TIM2_IRQHandler, USART1_IRQHandler
+         are in Flash (0x08000xxx) — expected on STM32F407 (no ITCM).
+       - Recommend: verify ART accelerator enabled (FLASH_ACR bit 9 = 1).
+       - Recommend: verify instruction prefetch enabled (FLASH_ACR bit 8 = 1).
+       - Note: ART does NOT eliminate cold-entry ISR jitter on random dispatch.
+     Must NOT recommend "move to ITCM" — ITCM does not exist on this chip.
+
+[B2] stack_in_ccm_good  (INFO / PASS)  [STATIC]
+     Trigger: __stack_start = 0x10000000 → CCM region (dma_accessible: false).
+     Required message:
+       - Stack placed in CCM (0x10000000–0x10000800) — correct placement.
+       - CCM is CPU-only: DMA cannot cause bus contention on stack accesses.
+       - _Min_Stack_Size = 2048 bytes, usage = 144 bytes (7.0%).
+     This is a positive confirmation finding, not a warning.
+
+[B3] explicit_stack_found  (INFO / PASS)  [STATIC]
+     Trigger: _Min_Stack_Size present in linker script AND .stack section found.
+     Required message:
+       - Explicit stack section found: .stack in CCM.
+       - __stack_start = 0x10000000, __stack_end = 0x10000800.
+       - _Min_Stack_Size = 0x800 (2048 bytes).
+       - Worst-case frame depth: 144 bytes (7.0% of budget).
+
+[B4] dma_buffers_correctly_placed  (INFO / PASS)  [STATIC]
+     Trigger: .dma_buffers section in SRAM1 (dma_accessible: true),
+              __dma_buffers_start = 0x20000040 (32-byte aligned).
+     Required message:
+       - DMA buffer section .dma_buffers: SRAM1 at 0x20000040, 512 bytes.
+       - DMA-accessible: YES (SRAM1 reachable by DMA1, DMA2 via AHB_S0).
+       - Alignment: 32-byte aligned — correct for D-cache maintenance.
+       - Note: STM32F407 M4 has no D-cache; alignment is forward-compatible.
+
+# ══════════════════════════════════════════════════════════════════════
+# SECTION C: MEMORY MAP EXPECTED
+# ══════════════════════════════════════════════════════════════════════
+
+MEMORY MAP (from arm-none-eabi-size):
+======================================
+  .text (FLASH)        : 1,812 bytes / 1,048,576 bytes (0.2%)
+  .data (SRAM1)        :    16 bytes / 114,688 bytes   (0.0%)
+  .bss  (SRAM1)        :    24 bytes / 114,688 bytes   (0.0%)
+  .dma_buffers (SRAM1) :   512 bytes / 114,688 bytes   (0.4%)
+  .stack (CCM)         : 2,048 bytes / 65,536 bytes    (3.1%)
+  .heap  (CCM)         :   512 bytes / 65,536 bytes    (0.8%)
+
+Key linker symbols (from firmware.map):
+  _estack              = 0x10010000  (CCM top)
+  __stack_start        = 0x10000000  (CCM base)
+  __stack_end          = 0x10000800
+  _Min_Stack_Size      = 0x00000800  (2048 bytes)
+  __dma_buffers_start  = 0x20000040  (32-byte aligned, SRAM1)
+  __dma_buffers_end    = 0x20000240
+  __bss_end__          = 0x20000028  (SRAM1)
+
+# ══════════════════════════════════════════════════════════════════════
+# SECTION D: CALL GRAPH EXPECTED
+# ══════════════════════════════════════════════════════════════════════
+
+CALL GRAPH (strict DAG, verified via objdump):
+==============================================
+
+  main
+  ├── system_init          (leaf)
+  ├── uart_init            (leaf)
+  ├── uart_tx_byte         (leaf, called 4× from main directly)
+  └── main_loop
+      ├── sensor_read
+      │   └── adc_sample   (leaf)
+      └── process_frame
+          ├── crc_compute  (leaf — inner loops are NOT recursive calls)
+          └── uart_tx_byte (leaf)
+
+ISR handlers (not reachable from main call graph):
+  DMA2_Stream0_IRQHandler  (leaf)
+  TIM2_IRQHandler          (leaf)
+  USART1_IRQHandler        (leaf)
+
+NO back-edges. NO recursion. Verified by:
+  arm-none-eabi-objdump -d firmware.elf | grep -E "bl\s|blx\s"
+  → crc_compute has zero 'bl' instructions (its loops use 'b' not 'bl')
+
+# ══════════════════════════════════════════════════════════════════════
+# SECTION E: STACK USAGE FROM .su FILE
+# ══════════════════════════════════════════════════════════════════════
+
+STACK USAGE (from su/main.su):
+================================
+  Function                   Frame    Type
+  DMA2_Stream0_IRQHandler      4B    static
+  TIM2_IRQHandler              4B    static
+  USART1_IRQHandler           16B    static
+  system_init                 16B    static
+  uart_init                   32B    static
+  uart_tx_byte                24B    static
+  adc_sample                  16B    static
+  crc_compute                 32B    static
+  sensor_read                 48B    static
+  process_frame               64B    static
+  main_loop                   32B    static
+  main                        16B    static
+
+Worst-case simultaneous depth analysis:
+  Chain: main(16) + main_loop(32) + process_frame(64) + crc_compute(32)
+       = 144 bytes
+  Budget: 2048 bytes (_Min_Stack_Size)
+  Usage : 7.0%
+  Status: PASS (threshold: 80% = 1638 bytes)
+
+# ══════════════════════════════════════════════════════════════════════
+# SECTION F: HOW TO USE THIS FILE AS A TEST
+# ══════════════════════════════════════════════════════════════════════
+
+PASS CRITERIA:
+==============
+Run the analyzer and verify:
+
+  [ ] Score = 100/100 (or no deductions)
+  [ ] No CRITICAL findings
+  [ ] No WARNING findings  
+  [ ] Findings A1–A8 did NOT fire (false positive check)
+  [ ] Finding B1 fired with correct chip-specific message
+  [ ] Finding B2 fired confirming CCM stack placement
+  [ ] Finding B3 fired confirming explicit stack section
+  [ ] Finding B4 fired confirming DMA buffer placement
+  [ ] Tool did NOT crash or raise any exception
+  [ ] Memory map summary matches Section C numbers
+
+FAILURE TRIAGE:
+===============
+  A1 fires  → stack_analyzer.py threshold or su_parser.py frame computation bug
+  A2 fires  → ld_parser.py fails to find _Min_Stack_Size or .stack section
+  A3 fires  → itcm_overflow rule not chip-aware (hardcodes ITCM assumption)
+  A4 fires  → dma_alignment.py address arithmetic error (0x40 % 32 should be 0)
+  A5 fires  → region_classifier.py confuses stack with DMA buffer
+  A6 fires  → bus_contention heuristic triggers on CCM (wrong — CCM not AHB)
+  A7 fires  → blocklist match false-positives on flag-setting in ISR
+  A8 fires  → call_graph.py confuses 'b' (branch) with 'bl' (branch-link/call)

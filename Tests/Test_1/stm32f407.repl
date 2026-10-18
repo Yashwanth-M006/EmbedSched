@@ -1,0 +1,37 @@
+// stm32f407.repl — Renode platform description for STM32F407VG
+// Full peripheral set so firmware UART polling loop doesn't spin indefinitely
+
+nvic: IRQControllers.NVIC @ sysbus 0xE000E000
+    priorityMask: 0xF0
+    systickFrequency: 168000000
+    IRQ -> cpu@0
+
+cpu: CPU.CortexM @ sysbus
+    cpuType: "cortex-m4f"
+    nvic: nvic
+
+flash: Memory.MappedMemory @ sysbus 0x08000000
+    size: 0x100000
+
+sram: Memory.MappedMemory @ sysbus 0x20000000
+    size: 0x20000
+
+ccm: Memory.MappedMemory @ sysbus 0x10000000
+    size: 0x10000
+
+// APB peripheral stub region — catches all APB1/APB2 register reads
+// without crashing the CPU. The firmware reads USART1 SR at 0x40011000.
+apb_stub: Memory.MappedMemory @ sysbus 0x40000000
+    size: 0x20000
+
+// USART1 at 0x40011000 — needs its own mapping above APB2 base
+apb2_stub: Memory.MappedMemory @ sysbus 0x40010000
+    size: 0x10000
+
+// RCC peripheral at 0x40023800
+rcc_stub: Memory.MappedMemory @ sysbus 0x40020000
+    size: 0x10000
+
+// Flash interface registers at 0x40023C00
+flash_iface: Memory.MappedMemory @ sysbus 0x40023C00
+    size: 0x400

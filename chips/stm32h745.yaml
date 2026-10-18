@@ -1,0 +1,35 @@
+name: STM32H745
+cores_count: 2
+core_types:
+  - id: 0
+    type: cortex-m7
+    clock_max_mhz: 480
+  - id: 1
+    type: cortex-m4
+    clock_max_mhz: 240
+inter_core_shared_regions:
+  - name: SRAM3
+    origin: 0x30040000
+    size_kb: 32
+    bus_port: AHB_S3
+    accessible_by_cores: [0, 1]
+    spinlock_overhead_cycles: 8
+    data_write_latency_us: 1000.0
+memory_regions:
+  DTCM:
+    origin: 0x20000000
+    size_kb: 128
+    wait_states: 0
+    dma_accessible: false
+  SRAM1:
+    origin: 0x24000000
+    size_kb: 512
+    wait_states: 1
+    dma_accessible: true
+  FLASH:
+    origin: 0x08000000
+    size_kb: 65536
+    bus: AXI
+flash_wait_states:
+  - { freq_max_mhz: 240, ws: 4 }
+exception_entry_cycles: 12

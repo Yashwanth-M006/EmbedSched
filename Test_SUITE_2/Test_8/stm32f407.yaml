@@ -1,0 +1,30 @@
+name: STM32F407
+core_types:
+  - id: 0
+    type: cortex-m4
+    clock_max_mhz: 168
+cores_count: 1
+cache:
+  present: false
+memory_regions:
+  DTCM:
+    origin: 0x10000000
+    size_kb: 64
+    wait_states: 0
+    dma_accessible: false
+  SRAM1:
+    origin: 0x20000000
+    size_kb: 112
+    wait_states: 0
+    dma_accessible: true
+  FLASH:
+    origin: 0x08000000
+    size_kb: 16384
+    bus: AHB
+flash_wait_states:
+  - { freq_max_mhz: 30,  ws: 0 }
+  - { freq_max_mhz: 60,  ws: 1 }
+  - { freq_max_mhz: 84,  ws: 2 }
+  - { freq_max_mhz: 105, ws: 3 }
+  - { freq_max_mhz: 168, ws: 4 }
+exception_entry_cycles: 12

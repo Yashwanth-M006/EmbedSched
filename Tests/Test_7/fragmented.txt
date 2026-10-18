@@ -1,0 +1,305 @@
+
+project7_fragmented_flash/build/fragmented.elf:     file format elf32-littlearm
+
+
+Disassembly of section .text:
+
+08000000 <__isr_vector>:
+ 8000000:	2001c000 	.word	0x2001c000
+ 8000004:	08000101 	.word	0x08000101
+ 8000008:	08000105 	.word	0x08000105
+ 800000c:	08000109 	.word	0x08000109
+ 8000010:	0800010d 	.word	0x0800010d
+ 8000014:	00000000 	.word	0x00000000
+ 8000018:	00000000 	.word	0x00000000
+ 800001c:	00000000 	.word	0x00000000
+ 8000020:	00000000 	.word	0x00000000
+ 8000024:	00000000 	.word	0x00000000
+ 8000028:	00000000 	.word	0x00000000
+ 800002c:	08000111 	.word	0x08000111
+ 8000030:	00000000 	.word	0x00000000
+ 8000034:	00000000 	.word	0x00000000
+ 8000038:	08000115 	.word	0x08000115
+ 800003c:	00000000 	.word	0x00000000
+ 8000040:	00000000 	.word	0x00000000
+ 8000044:	00000000 	.word	0x00000000
+ 8000048:	00000000 	.word	0x00000000
+ 800004c:	00000000 	.word	0x00000000
+ 8000050:	00000000 	.word	0x08000119 	.word	0x08000131
+ 8000054:	00000000 	.word	0x00000000
+ 8000058:	00000000 	.word	0x00000000
+ 800005c:	00000000 	.word	0x00000000
+ 8000060:	00000000 	.word	0x00000000
+ 8000064:	00000000 	.word	0x00000000
+ 8000068:	00000000 	.word	0x00000000
+ 800006c:	00000000 	.word	0x00000000
+ 8000070:	00000000 	.word	0x00000000
+ 8000074:	00000000 	.word	0x00000000
+ 8000078:	00000000 	.word	0x00000000
+ 800007c:	00000000 	.word	0x00000000
+ 8000080:	00000000 	.word	0x00000000
+ 8000084:	00000000 	.word	0x00000000
+ 8000088:	00000000 	.word	0x00000000
+ 800008c:	00000000 	.word	0x00000000
+ 8000090:	00000000 	.word	0x00000000
+ 8000094:	00000000 	.word	0x00000000
+ 8000098:	00000000 	.word	0x00000000
+ 800009c:	00000000 	.word	0x00000000
+ 80000a0:	00000000 	.word	0x00000000
+ 80000a4:	00000000 	.word	0x00000000
+ 80000a8:	00000000 	.word	0x00000000
+ 80000ac:	00000000 	.word	0x00000000
+ 80000b0:	00000000 	.word	0x00000000
+ 80000b4:	00000000 	.word	0x00000000
+
+08000100 <Reset_Handler>:
+ 8000100:	b580      	push	{r7, lr}
+ 8000102:	af00      	add	r7, sp, #0
+ 8000104:	bd80      	pop	{r7, pc}
+
+08000108 <NMI_Handler>:
+ 8000108:	4770      	bx	lr
+
+0800010c <HardFault_Handler>:
+ 800010c:	e7fe      	b.n	800010c <HardFault_Handler>
+
+08000110 <MemManage_Handler>:
+ 8000110:	4770      	bx	lr
+
+08000114 <BusFault_Handler>:
+ 8000114:	4770      	bx	lr
+
+08000118 <system_init>:
+ 8000118:	b480      	push	{r7}
+ 800011a:	af00      	add	r7, sp, #0
+ 800011c:	46bd      	mov	sp, r7
+ 800011e:	f85d 7b04 	ldr.w	r7, [sp], #4
+ 8000122:	4770      	bx	lr
+
+08000124 <uart_init>:
+ 8000124:	b480      	push	{r7}
+ 8000126:	af00      	add	r7, sp, #0
+ 8000128:	46bd      	mov	sp, r7
+ 800012a:	f85d 7b04 	ldr.w	r7, [sp], #4
+ 800012e:	4770      	bx	lr
+
+/* ===== GAP 1: 0x08000130 → 0x08001000 (0xED0 bytes) ===== */
+
+08001000 <main>:
+ 8001000:	b590      	push	{r4, r7, lr}
+ 8001002:	b088      	sub	sp, #32	; 0x20
+ 8001004:	af00      	add	r7, sp, #0
+ 8001006:	f000 f896 	bl	8001136 <system_init>
+ 800100a:	f000 f898 	bl	8001144 <uart_init>
+ 800100e:	4b0f      	ldr	r3, [pc, #60]
+ 8001010:	681b      	ldr	r3, [r3, #0]
+ 8001012:	2b00      	cmp	r3, #0
+ 8001014:	d000      	beq.n	8001018 <main+0x18>
+ 8001016:	e7fe      	b.n	8001016 <main+0x16>
+ 8001018:	4b0d      	ldr	r3, [pc, #52]
+ 800101a:	681b      	ldr	r3, [r3, #0]
+ 800101c:	2b00      	cmp	r3, #0
+ 800101e:	d000      	beq.n	8001022 <main+0x22>
+ 8001020:	e7fe      	b.n	8001020 <main+0x20>
+ 8001022:	f000 f843 	bl	800150c <sensor_read>
+ 8001026:	6038      	str	r0, [r7, #0]
+ 8001028:	687b      	ldr	r3, [r7, #4]
+ 800102a:	2b00      	cmp	r3, #0
+ 800102c:	d000      	beq.n	8001030 <main+0x30>
+ 800102e:	e7fe      	b.n	8001030 <main+0x30>
+ 8001030:	f000 f858 	bl	8001144 <uart_tx>
+ 8001034:	6038      	str	r0, [r7, #0]
+ 8001036:	687b      	ldr	r3, [r7, #4]
+ 8001038:	2b00      	cmp	r3, #0
+ 800103a:	d000      	beq.n	800103e <main+0x3e>
+ 800103c:	e7fe      	b.n	800103c <main+0x3c>
+ 800103e:	46bd      	mov	sp, r7
+ 8001040:	bd90      	pop	{r4, r7, pc}
+ 8001042:	bf00      	nop
+
+08001044 <main_loop>:
+ 8001044:	b580      	push	{r7, lr}
+ 8001046:	b082      	sub	sp, #8
+ 8001048:	af00      	add	r7, sp, #0
+ 800104a:	e7fe      	b.n	800104a <main_loop+0x6>
+
+08001050 <idle_task>:
+ 8001050:	b480      	push	{r7}
+ 8001052:	af00      	add	r7, sp, #0
+ 8001054:	46bd      	mov	sp, r7
+ 8001056:	f85d 7b04 	ldr.w	r7, [sp], #4
+ 800105a:	4770      	bx	lr
+
+08001060 <config_sensor>:
+ 8001060:	b580      	push	{r7, lr}
+ 8001062:	b084      	sub	sp, #16
+ 8001064:	af00      	add	r7, sp, #0
+ 8001066:	4f0b      	ldr	r7, [pc, #44]
+ 8001068:	6038      	str	r0, [r7, #0]
+ 800106a:	4f0a      	ldr	r7, [pc, #40]
+ 800106c:	6039      	str	r1, [r7, #0]
+ 800106e:	4f09      	ldr	r7, [pc, #36]
+ 8001070:	603a      	str	r2, [r7, #0]
+ 8001072:	46bd      	mov	sp, r7
+ 8001074:	bd80      	pop	{r7, pc}
+
+08001080 <calibrate_sensor>:
+ 8001080:	b590      	push	{r4, r7, lr}
+ 8001082:	b088      	sub	sp, #32
+ 8001084:	af00      	add	r7, sp, #0
+ 8001086:	4602      	mov	r2, r0
+ 8001088:	4613      	mov	r3, r2
+ 800108a:	6478      	str	r0, [r7, #68]
+ 800108c:	e7fe      	b.n	800108c <calibrate_sensor+0xc>
+
+080010a0 <temp_sensor_init>:
+ 80010a0:	b480      	push	{r7}
+ 80010a2:	af00      	add	r7, sp, #0
+ 80010a4:	46bd      	mov	sp, r7
+ 80010a6:	f85d 7b04 	ldr.w	r7, [sp], #4
+ 80010aa:	4770      	bx	lr
+
+080010b0 <humidity_sensor_init>:
+ 80010b0:	b480      	push	{r7}
+ 80010b2:	af00      	add	r7, sp, #0
+ 80010b4:	46bd      	mov	sp, r7
+ 80010b6:	f85d 7b04 	ldr.w	r7, [sp], #4
+ 80010ba:	4770      	bx	lr
+
+080010c0 <pressure_sensor_init>:
+ 80010c0:	b480      	push	{r7}
+ 80010c2:	af00      	add	r7, sp, #0
+ 80010c4:	46bd      	mov	sp, r7
+ 80010c6:	f85d 7b04 	ldr.w	r7, [sp], #4
+ 80010ca:	4770      	bx	lr
+
+080010d0 <read_adc>:
+ 80010d0:	b480      	push	{r7}
+ 80010d2:	af00      	add	r7, sp, #0
+ 80010d4:	46bd      	mov	sp, r7
+ 80010d6:	f85d 7b04 	ldr.w	r7, [sp], #4
+ 80010da:	4770      	bx	lr
+
+/* ===== GAP 2: 0x080010DB → 0x08001400 (0x325 bytes) ===== */
+
+08001400 <filter_data>:
+ 8001400:	b480      	push	{r7}
+ 8001402:	af00      	add	r7, sp, #0
+ 8001404:	46bd      	mov	sp, r7
+ 8001406:	f85d 7b04 	ldr.w	r7, [sp], #4
+ 800140a:	4770      	bx	lr
+
+08001410 <apply_calibration>:
+ 8001410:	b480      	push	{r7}
+ 8001412:	af00      	add	r7, sp, #0
+ 8001414:	46bd      	mov	sp, r7
+ 8001416:	f85d 7b04 	ldr.w	r7, [sp], #4
+ 800141a:	4770      	bx	lr
+
+/* ===== GAP 3: 0x0800141B → 0x080015C0 (0x1A5 bytes) ===== */
+
+080015c0 <sensor_read>:
+ 80015c0:	b590      	push	{r4, r7, lr}
+ 80015c2:	b088      	sub	sp, #32	; 0x20
+ 80015c4:	af00      	add	r7, sp, #0
+ 80015c6:	f000 f805 	bl	80015d4 <read_adc>
+ 80015ca:	6038      	str	r0, [r7, #0]
+ 80015cc:	687b      	ldr	r3, [r7, #4]
+ 80015ce:	2b00      	cmp	r3, #0
+ 80015d0:	d000      	beq.n	80015d4 <sensor_read+0x14>
+ 80015d2:	e7fe      	b.n	80015d2 <sensor_read+0x12>
+ 80015d4:	46bd      	mov	sp, r7
+ 80015d6:	bd90      	pop	{r4, r7, pc}
+ 80015d8:	bf00      	nop
+
+/* ===== GAP 4: 0x080015D9 → 0x08002800 (0x1227 bytes) ===== */
+
+08002800 <uart_tx>:
+ 8002800:	b590      	push	{r4, r7, lr}
+ 8002802:	b08a      	sub	sp, #40	; 0x28
+ 8002804:	af00      	add	r7, sp, #0
+ 8002806:	4b0f      	ldr	r3, [pc, #60]
+ 8002808:	681b      	ldr	r3, [r3, #0]
+ 800280a:	2b00      	cmp	r3, #0
+ 800280c:	d000      	beq.n	8002810 <uart_tx+0x10>
+ 800280e:	e7fe      	b.n	800280e <uart_tx+0xe>
+ 8002810:	687b      	ldr	r3, [r7, #4]
+ 8002812:	2b00      	cmp	r3, #0
+ 8002814:	d000      	beq.n	8002818 <uart_tx+0x18>
+ 8002816:	e7fe      	b.n	8002816 <uart_tx+0x16>
+ 8002818:	4b0c      	ldr	r3, [pc, #48]
+ 800281a:	6818      	ldr	r0, [r3, #0]
+ 800281c:	4b0c      	ldr	r3, [pc, #48]
+ 800281e:	781b      	ldrb	r3, [r3, #0]
+ 8002820:	4a0b      	ldr	r2, [pc, #44]
+ 8002822:	6812      	ldr	r2, [r2, #0]
+ 8002824:	2110      	movs	r1, #16
+ 8002826:	4618      	mov	r0, r3
+ 8002828:	4611      	mov	r1, r2
+ 800282a:	4622      	mov	r2, r4
+ 800282c:	f44f 737a 	mov.w	r3, #1000	; 0x3e8
+ 8002830:	4b08      	ldr	r3, [pc, #32]
+ 8002832:	6818      	ldr	r0, [r3, #0]
+ 8002834:	4b08      	ldr	r3, [pc, #32]
+ 8002836:	781b      	ldrb	r3, [r3, #0]
+ 8002838:	2110      	movs	r1, #16
+ 800283a:	4611      	mov	r1, r2
+ 800283c:	2364      	movs	r3, #100
+ 800283e:	4622      	mov	r2, r4
+ 8002840:	4b06      	ldr	r3, [pc, #24]
+ 8002842:	6818      	ldr	r0, [r3, #0]
+ 8002844:	4b06      	ldr	r3, [pc, #24]
+ 8002846:	781b      	ldrb	r3, [r3, #0]
+ 8002848:	4b05      	ldr	r3, [pc, #20]
+ 800284a:	6818      	ldr	r0, [r3, #0]
+ 800284c:	46bd      	mov	sp, r7
+ 800284e:	bd90      	pop	{r4, r7, pc}
+ 8002850:	bf00      	nop
+
+08002860 <uart_rx>:
+ 8002860:	b590      	push	{r4, r7, lr}
+ 8002862:	b08a      	sub	sp, #40	; 0x28
+ 8002864:	af00      	add	r7, sp, #0
+ 8002866:	e7fe      	b.n	8002866 <uart_rx+0x6>
+
+08002880 <uart_flush>:
+ 8002880:	b480      	push	{r7}
+ 8002882:	af00      	add	r7, sp, #0
+ 8002884:	46bd      	mov	sp, r7
+ 8002886:	f85d 7b04 	ldr.w	r7, [sp], #4
+ 800288a:	4770      	bx	lr
+
+08002890 <uart_set_baudrate>:
+ 8002890:	b480      	push	{r7}
+ 8002892:	af00      	add	r7, sp, #0
+ 8002894:	46bd      	mov	sp, r7
+ 8002896:	f85d 7b04 	ldr.w	r7, [sp], #4
+ 800289a:	4770      	bx	lr
+
+080028a0 <error_handler>:
+ 80028a0:	b480      	push	{r7}
+ 80028a2:	af00      	add	r7, sp, #0
+ 80028a4:	46bd      	mov	sp, r7
+ 80028a6:	f85d 7b04 	ldr.w	r7, [sp], #4
+ 80028aa:	4770      	bx	lr
+
+080028b0 <log_event>:
+ 80028b0:	b480      	push	{r7}
+ 80028b2:	af00      	add	r7, sp, #0
+ 80028b4:	46bd      	mov	sp, r7
+ 80028b6:	f85d 7b04 	ldr.w	r7, [sp], #4
+ 80028ba:	4770      	bx	lr
+
+080028c0 <get_timestamp>:
+ 80028c0:	b480      	push	{r7}
+ 80028c2:	af00      	add	r7, sp, #0
+ 80028c4:	46bd      	mov	sp, r7
+ 80028c6:	f85d 7b04 	ldr.w	r7, [sp], #4
+ 80028ca:	4770      	bx	lr
+
+080028d0 <format_data>:
+ 80028d0:	b480      	push	{r7}
+ 80028d2:	af00      	add	r7, sp, #0
+ 80028d4:	46bd      	mov	sp, r7
+ 80028d6:	f85d 7b04 	ldr.w	r7, [sp], #4
+ 80028da:	4770      	bx	lr

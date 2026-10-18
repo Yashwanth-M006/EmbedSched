@@ -1,0 +1,63 @@
+name: STM32F746
+core: cortex-m7
+clock_max_mhz: 216
+
+cache:
+  icache_kb: 16
+  dcache_kb: 16
+  line_bytes: 32
+  ways: 4
+  present: true
+
+memory_regions:
+  ITCM:
+    origin: 0x00000000
+    size_kb: 16
+    wait_states: 0
+    bus_port: ITCM         # direct core interface, bypasses cache
+    dma_accessible: false  # DMA cannot reach ITCM on STM32F7
+  DTCM:
+    origin: 0x20000000
+    size_kb: 64
+    wait_states: 0
+    bus_port: DTCM
+    dma_accessible: false
+  SRAM1:
+    origin: 0x20010000
+    size_kb: 240
+    wait_states: 0
+    bus_port: AHB_S1       # AHB bus matrix slave port 1
+    dma_accessible: true
+  SRAM2:
+    origin: 0x2004C000
+    size_kb: 16
+    wait_states: 0
+    bus_port: AHB_S2       # separate AHB bus matrix slave port
+    dma_accessible: true
+  FLASH:
+    origin: 0x08000000
+    size_kb: 1024
+    bus_port: AXI
+    dma_accessible: false
+
+flash_wait_states:
+  # VOS1, from STM32F7 reference manual Table 4 (section 3.3.2)
+  - { freq_max_mhz: 30,  ws: 0 }
+  - { freq_max_mhz: 60,  ws: 1 }
+  - { freq_max_mhz: 90,  ws: 2 }
+  - { freq_max_mhz: 120, ws: 3 }
+  - { freq_max_mhz: 150, ws: 4 }
+  - { freq_max_mhz: 180, ws: 5 }
+  - { freq_max_mhz: 210, ws: 6 }
+  - { freq_max_mhz: 216, ws: 7 }
+
+exception_entry_cycles: 12   # ARMv7-M ARM, section B1.5.6
+vector_table_section: .isr_vector
+
+bus_matrix:
+  # Which master-slave pairs share a bus port (contention possible)
+  contending_pairs:
+    - masters: [CPU_D, DMA1, DMA2]
+      slave: AHB_S1        # all contend on SRAM1
+    - masters: [CPU_D, DMA2]
+      slave: AHB_S2        # DMA2 can reach SRAM2; CPU also can
