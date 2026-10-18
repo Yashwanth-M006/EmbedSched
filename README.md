@@ -826,9 +826,18 @@ extract_wcets_for_tasks(tasks, symbols, call_graph, chip_profile, dynamic_profil
 
 **`extract_wcets_for_tasks(tasks, symbols, call_graph, chip_profile, dynamic_profile=None)`**  
 Determines the Worst-Case Execution Time for every periodic task and ISR:
-- **`[CALCULATED]` (Code-size heuristic):** Sourced from Thumb-2 ISA encoding statistics ($2.5\text{ bytes/insn}$) and ARMv7-M pipeline models ($1.15\times\text{ penalty factor}$).
+- **`[CALCULATED]` (Code-size heuristic):** Sourced from core architecture profiles or YAML overrides:
+  - **Automatic Core Resolution:** Automatically selects instruction density and CPI penalty according to the target core specified in the chip YAML:
+    - `Cortex-M0 / M0+ / M1`: $2.10\text{ bytes/insn}$, $1.35\text{ CPI}$ (ARMv6-M 16-bit Thumb, 2-stage pipeline)
+    - `Cortex-M3 / M4`: $2.50\text{ bytes/insn}$, $1.15\text{ CPI}$ (ARMv7-M mixed Thumb-2, 3-stage pipeline)
+    - `Cortex-M7`: $2.60\text{ bytes/insn}$, $0.85\text{ CPI}$ (ARMv7E-M superscalar dual-issue pipeline)
+    - `Cortex-M23`: $2.15\text{ bytes/insn}$, $1.30\text{ CPI}$ (ARMv8-M Baseline)
+    - `Cortex-M33`: $2.55\text{ bytes/insn}$, $1.15\text{ CPI}$ (ARMv8-M Mainline)
+    - `Cortex-M55 / M85`: $2.65\text{--}2.70\text{ bytes/insn}$, $0.75\text{--}0.90\text{ CPI}$ (Helium vector / dual-issue)
+    - `Cortex-R / Cortex-A`: $2.50\text{--}4.00\text{ bytes/insn}$, $0.50\text{--}0.90\text{ CPI}$
+  - **YAML Overrides:** Users can override parameters either globally or per-core in multicore profiles using `bytes_per_instruction` and `cpi_penalty` (or `cpi`).
 - **`[SIMULATED]` (Renode functional trace):** Derived from execution cycle counts and instruction frequencies captured during live emulation.
-- **Hardware-Aware ISR Integration:** Automatically excludes non-periodic exception handlers (`Reset_Handler`, `HardFault_Handler`, `NMI_Handler`) while modeling periodic device ISRs (`*_IRQHandler`) with ARMv7-M hardware entry/return overhead ($12 + 12 = 24\text{ cycles}$) plus flash wait-state inflation.
+- **Hardware-Aware ISR Integration:** Automatically excludes non-periodic exception handlers (`Reset_Handler`, `HardFault_Handler`, `NMI_Handler`) while modeling periodic device ISRs (`*_IRQHandler`) with hardware entry/return overhead ($12 + 12 = 24\text{ cycles}$) plus flash wait-state inflation.
 - **`[HEURISTIC]` Fallback:** Assigns a 10-cycle unmeasured placeholder when symbols are missing from the ELF table.
 
 ---

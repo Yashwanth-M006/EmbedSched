@@ -1,5 +1,7 @@
 name: STM32H745
 cores_count: 2
+bytes_per_instruction: 2.5
+cpi_penalty: 1.15
 core_types:
   - id: 0
     type: cortex-m7

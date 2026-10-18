@@ -123,6 +123,76 @@ def test_wcet_call_graph_traversal():
     print(f"  PASS  WCET call-graph: {caller.wcet_us:.4f} µs (includes callee)")
 
 
+def test_wcet_core_auto_defaults():
+    """Automatic resolution of instruction density and CPI per core type."""
+    from analysis.wcet_extractor import resolve_core_timing
+
+    # Single-core Cortex-M0+
+    bpi, cpi = resolve_core_timing({'core': 'cortex-m0+'})
+    assert (bpi, cpi) == (2.10, 1.35), f"Expected (2.10, 1.35), got {(bpi, cpi)}"
+
+    # Single-core Cortex-M4
+    bpi, cpi = resolve_core_timing({'core': 'cortex-m4'})
+    assert (bpi, cpi) == (2.50, 1.15), f"Expected (2.50, 1.15), got {(bpi, cpi)}"
+
+    # Single-core Cortex-M7
+    bpi, cpi = resolve_core_timing({'core': 'cortex-m7'})
+    assert (bpi, cpi) == (2.60, 0.85), f"Expected (2.60, 0.85), got {(bpi, cpi)}"
+
+    # Multicore chip (e.g. STM32H745 with M7 on core 0, M4 on core 1)
+    multi_chip = {
+        'core_types': [
+            {'id': 0, 'type': 'cortex-m7', 'clock_max_mhz': 480},
+            {'id': 1, 'type': 'cortex-m4', 'clock_max_mhz': 240},
+        ]
+    }
+    bpi_0, cpi_0 = resolve_core_timing(multi_chip, core_id=0)
+    assert (bpi_0, cpi_0) == (2.60, 0.85), f"Core 0 expected (2.60, 0.85), got {(bpi_0, cpi_0)}"
+    bpi_1, cpi_1 = resolve_core_timing(multi_chip, core_id=1)
+    assert (bpi_1, cpi_1) == (2.50, 1.15), f"Core 1 expected (2.50, 1.15), got {(bpi_1, cpi_1)}"
+
+    print("  PASS  Core automatic defaults resolved correctly across architectures")
+
+
+def test_wcet_yaml_overrides():
+    """User overrides in YAML take precedence over core defaults."""
+    from analysis.wcet_extractor import resolve_core_timing
+
+    # Global override on single-core chip
+    chip_override = {
+        'core': 'cortex-m4',
+        'bytes_per_instruction': 2.80,
+        'cpi_penalty': 1.05,
+    }
+    bpi, cpi = resolve_core_timing(chip_override)
+    assert (bpi, cpi) == (2.80, 1.05), f"Expected (2.80, 1.05), got {(bpi, cpi)}"
+
+    # Per-core override in multicore chip
+    multi_override = {
+        'core_types': [
+            {'id': 0, 'type': 'cortex-m7', 'bytes_per_instruction': 2.75, 'cpi': 0.80},
+            {'id': 1, 'type': 'cortex-m4'},  # Should use default M4 values
+        ]
+    }
+    bpi_0, cpi_0 = resolve_core_timing(multi_override, core_id=0)
+    assert (bpi_0, cpi_0) == (2.75, 0.80), f"Expected (2.75, 0.80), got {(bpi_0, cpi_0)}"
+    bpi_1, cpi_1 = resolve_core_timing(multi_override, core_id=1)
+    assert (bpi_1, cpi_1) == (2.50, 1.15), f"Expected (2.50, 1.15), got {(bpi_1, cpi_1)}"
+
+    # Verify extract_wcets uses the overrides in task calculation
+    task = _make_task('T_Custom', 1000, 1000, 10, 'custom_func')
+    sym = _make_symbol('custom_func', 280)  # 280 bytes
+    extract_wcets(
+        tasks=[task],
+        symbols=[sym],
+        call_graph={},
+        chip_profile=chip_override,
+    )
+    # 280 bytes / 2.80 bytes_per_insn = 100 insns * 1.05 cpi = 105 cycles
+    assert task.wcet_cycles == 105, f"Expected 105 cycles, got {task.wcet_cycles}"
+    print(f"  PASS  YAML overrides: {task.wcet_cycles} cycles matching overridden parameters")
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Test 2: RTA engine
 # ─────────────────────────────────────────────────────────────────────────────
@@ -296,6 +366,8 @@ def run_all_tests():
         test_wcet_code_size_heuristic,
         test_wcet_renode_trace,
         test_wcet_call_graph_traversal,
+        test_wcet_core_auto_defaults,
+        test_wcet_yaml_overrides,
         test_rta_trivially_schedulable,
         test_rta_two_tasks_schedulable,
         test_rta_deadline_miss,
