@@ -1,0 +1,27 @@
+{
+  "chip": "tests/Test_Suite3/Test_6/stm32f407.yaml",
+  "cores": [{ "id": 0, "algorithm": "EDF", "preemptive": true }],
+  "resource_protocol": "PCP",
+  "resources": [],
+  "tasks": [
+    {
+      "name": "tau1",
+      "entry_function": "task1",
+      "period_ms": 6,
+      "deadline_ms": 5,
+      "core": 0,
+      "priority": 1,
+      "resources": []
+    },
+    {
+      "name": "tau2",
+      "entry_function": "task2",
+      "period_ms": 10,
+      "deadline_ms": 7,
+      "core": 0,
+      "priority": 2,
+      "resources": []
+    }
+  ],
+  "inter_core_channels": []
+}

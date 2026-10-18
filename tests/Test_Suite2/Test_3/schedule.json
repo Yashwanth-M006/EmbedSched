@@ -1,0 +1,36 @@
+{
+  "chip": "tests/Test_Suite2/Test_3/stm32f407.yaml",
+  "cores": [{ "id": 0, "algorithm": "RM", "preemptive": true }],
+  "resource_protocol": "PCP",
+  "resources": [],
+  "tasks": [
+    {
+      "name": "Task_A",
+      "entry_function": "task_a",
+      "period_ms": 10,
+      "deadline_ms": 10,
+      "core": 0,
+      "priority": 1,
+      "resources": []
+    },
+    {
+      "name": "Task_B",
+      "entry_function": "task_b",
+      "period_ms": 15,
+      "deadline_ms": 6,
+      "core": 0,
+      "priority": 2,
+      "resources": []
+    },
+    {
+      "name": "Task_C",
+      "entry_function": "task_c",
+      "period_ms": 20,
+      "deadline_ms": 20,
+      "core": 0,
+      "priority": 3,
+      "resources": []
+    }
+  ],
+  "inter_core_channels": []
+}

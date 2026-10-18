@@ -1,0 +1,45 @@
+{
+  "chip": "tests/Test_Suite3/Test_8/stm32f407.yaml",
+  "cores": [
+    {
+      "id": 0,
+      "algorithm": "RM",
+      "preemptive": true
+    }
+  ],
+  "resource_protocol": "PCP",
+  "resources": [
+    {
+      "name": "R1",
+      "type": "mutex",
+      "protocol": "PCP",
+      "accessed_by": ["tau1", "tau2"],
+      "max_critical_section_ms": 4.0,
+      "critical_sections_ms": {
+        "tau1": 2.0,
+        "tau2": 4.0
+      }
+    }
+  ],
+  "tasks": [
+    {
+      "name": "tau1",
+      "entry_function": "task1",
+      "period_ms": 10,
+      "deadline_ms": 10,
+      "core": 0,
+      "priority": 1,
+      "resources": ["R1"]
+    },
+    {
+      "name": "tau2",
+      "entry_function": "task2",
+      "period_ms": 15,
+      "deadline_ms": 15,
+      "core": 0,
+      "priority": 2,
+      "resources": ["R1"]
+    }
+  ],
+  "inter_core_channels": []
+}
