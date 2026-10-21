@@ -1,5 +1,7 @@
 import argparse
 import sys
+import os
+import glob
 
 if hasattr(sys.stdout, 'reconfigure'):
     try:
@@ -36,10 +38,11 @@ from report.terminal_report import compute_score, print_terminal_report
 
 def main():
     parser = argparse.ArgumentParser(description="Firmware Efficiency Analyzer")
-    parser.add_argument('--elf', type=str, required=True, help="Path to firmware.elf")
-    parser.add_argument('--map', type=str, required=True, help="Path to firmware.map")
-    parser.add_argument('--ld', type=str, required=True, help="Path to linker script (.ld)")
-    parser.add_argument('--chip', type=str, required=True, help="Path to chip profile YAML")
+    parser.add_argument('--project-dir', type=str, help="Project directory to auto-discover firmware.elf, firmware.map, linker script, and chip profile")
+    parser.add_argument('--elf', type=str, required=False, help="Path to firmware.elf")
+    parser.add_argument('--map', type=str, required=False, help="Path to firmware.map")
+    parser.add_argument('--ld', type=str, required=False, help="Path to linker script (.ld)")
+    parser.add_argument('--chip', type=str, required=False, help="Path to chip profile YAML")
     parser.add_argument('--su-dir', type=str, help="Directory containing .su files")
     parser.add_argument('--startup', type=str, help="Path to startup_*.s assembly file")
     parser.add_argument('--freq-mhz', type=float, help="MCU Frequency in MHz")
@@ -69,8 +72,36 @@ def main():
         '--stochastic-sim', action='store_true',
         help="Inject random execution variance (85-100% WCET) and release drift to the scheduler simulation."
     )
+    parser.add_argument(
+        '--output', type=str,
+        help="Path to output markdown report file (e.g. reports/analysis_report.md)"
+    )
     
     args = parser.parse_args()
+
+    if args.project_dir:
+        import glob
+        pdir = args.project_dir
+        if not args.elf:
+            elfs = glob.glob(os.path.join(pdir, "*.elf"))
+            if elfs: args.elf = elfs[0]
+        if not args.map:
+            maps = glob.glob(os.path.join(pdir, "*.map"))
+            if maps: args.map = maps[0]
+        if not args.ld:
+            lds = glob.glob(os.path.join(pdir, "*.ld"))
+            if lds: args.ld = lds[0]
+        if not args.chip:
+            yamls = glob.glob(os.path.join(pdir, "*.yaml")) + glob.glob(os.path.join(pdir, "*.yml"))
+            if yamls: args.chip = yamls[0]
+
+    missing = []
+    if not args.elf: missing.append('--elf')
+    if not args.map: missing.append('--map')
+    if not args.ld: missing.append('--ld')
+    if not args.chip: missing.append('--chip')
+    if missing:
+        parser.error(f"the following arguments are required: {', '.join(missing)} (or supply --project-dir with matching files)")
     
     try:
         symbols = parse_map_file(args.map)
@@ -314,6 +345,28 @@ def main():
     if autosar_reporter:
         autosar_reporter()
 
+    if args.output:
+        from report.markdown_report import write_markdown_report
+        mem_data = {}
+        for region_name in all_regions:
+            usage = usage_by_region[region_name]
+            capacity = 0
+            if region_name in linker_regions:
+                capacity = linker_regions[region_name].length
+            elif region_name in chip_regions:
+                capacity = chip_regions[region_name].get('size_kb', 0) * 1024
+            mem_data[region_name] = {'used': usage, 'capacity': capacity}
+
+        autosar_dict = None
+        if hasattr(main, '_last_autosar_data'):
+            autosar_dict = main._last_autosar_data
+
+        out_dir = os.path.dirname(args.output)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+        write_markdown_report(args.output, findings, score, mem_data, autosar_dict)
+        print(f"\n[REPORT] Saved markdown report to {args.output}")
+
     if has_error:
         sys.exit(1)
 
@@ -429,12 +482,18 @@ def _run_autosar_analysis(
             parts = isr_name.split('_')
             suffix = parts[0].upper()
             formatted_name = "Task_ISR_" + suffix
+            target_core = 0
+            if hasattr(autosar_cfg, 'tasks') and autosar_cfg.tasks:
+                for t in autosar_cfg.tasks:
+                    if t.function == isr_name:
+                        target_core = t.core_id
+                        break
             isr_tasks.append(AutosarTask(
                 name=formatted_name,
                 period_us=1000,
                 deadline_us=1000,
                 priority=0,
-                core_id=0,
+                core_id=target_core,
                 function=isr_name,
                 is_isr=True,
             ))
@@ -472,7 +531,11 @@ def _run_autosar_analysis(
         print("[AUTOSAR] Running discrete-event scheduler simulation...")
         try:
             is_stoch = getattr(args, 'stochastic_sim', False)
-            sim = simulate_schedule([t for t in all_tasks if t.period_us > 0 and t.wcet_us > 0], stochastic=is_stoch)
+            sim = simulate_schedule(
+                [t for t in all_tasks if t.period_us > 0 and t.wcet_us > 0],
+                stochastic=is_stoch,
+                cores=autosar_cfg.cores if autosar_cfg else None
+            )
         except Exception as e:
             print(f"[AUTOSAR] Simulation failed: {e} — Gantt chart unavailable.", file=sys.stderr)
 
@@ -579,6 +642,26 @@ def _run_autosar_analysis(
             lowest_confidence_tag=lowest_tag,
             charts_dir=getattr(args, 'charts_dir', None),
         )
+
+    # Store for markdown exporter
+    task_list_data = []
+    for t in all_tasks:
+        task_list_data.append({
+            'name': t.name,
+            'core': t.core_id,
+            'priority': t.priority,
+            'period': t.period_us,
+            'wcet': round(t.wcet_us, 2),
+            'blocking': round(t.blocking_us, 2),
+            'wcrt': round(t.wcrt_us, 2),
+            'deadline': t.deadline_us,
+            'schedulable': t.schedulable,
+        })
+    main._last_autosar_data = {
+        'tasks': task_list_data,
+        'confidence_note': conf_note,
+        'verdict': "SCHEDULABLE" if not has_mismatch_error and all(t.schedulable for t in all_tasks) else "UNSCHEDULABLE / MISMATCH"
+    }
 
     return has_mismatch_error, reporter
 

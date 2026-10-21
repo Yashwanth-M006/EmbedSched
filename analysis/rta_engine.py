@@ -9,6 +9,7 @@ inter-core communication latency bounds.
 """
 
 import math
+import sys
 from typing import List, Dict, Tuple
 from models.autosar_task import AutosarTask, CoreConfig, Resource, InterCoreChannel
 
@@ -163,6 +164,12 @@ def _group_by_core(tasks: List[AutosarTask]) -> Dict[int, List[AutosarTask]]:
 
 def _run_fixed_priority_rta(ordered: List[AutosarTask], res_map: Dict[str, Resource], channel_latency: Dict[str, float]) -> None:
     for i, task in enumerate(ordered):
+        if task.deadline_us <= 0:
+            task.wcrt_us    = 0.0
+            task.schedulable = None
+            task.margin_us  = float('inf')
+            continue
+
         if task.wcet_us <= 0:
             task.wcrt_us    = 0.0
             task.schedulable = None
@@ -195,21 +202,29 @@ def _run_fixed_priority_rta(ordered: List[AutosarTask], res_map: Dict[str, Resou
         hp_tasks = [t for t in ordered[:i] if t.period_us > 0 and t.wcet_us > 0]
         R = task.wcet_us + B_i
         
+        converged = False
         for _ in range(MAX_ITERATIONS):
             interference = sum(math.ceil(round(R, 6) / hp.period_us) * hp.wcet_us for hp in hp_tasks)
             R_new = task.wcet_us + B_i + interference
 
             if R_new > task.deadline_us:
                 R = R_new
+                converged = True  # Deadline miss proven
                 break
             if abs(R_new - R) < 1e-9:
                 R = R_new
+                converged = True
                 break
             R = R_new
 
-        task.wcrt_us    = R
-        task.schedulable = R <= task.deadline_us
-        task.margin_us  = task.deadline_us - R
+        task.wcrt_us = R
+        if not converged:
+            print(f"[RTA] Warning: task '{task.name}' did not converge in {MAX_ITERATIONS} iterations.", file=sys.stderr)
+            task.schedulable = None
+            task.margin_us = task.deadline_us - R
+        else:
+            task.schedulable = R <= task.deadline_us
+            task.margin_us  = task.deadline_us - R
 
 def _run_edf_analysis(tasks: List[AutosarTask], channel_latency: Dict[str, float]) -> None:
     import math
@@ -238,7 +253,9 @@ def _run_edf_analysis(tasks: List[AutosarTask], channel_latency: Dict[str, float
             continue
 
         max_R = task.wcet_us + task.blocking_us
-        # Evaluate activations across the first busy period (up to 5 activations)
+        # Evaluate activations across the first busy period.
+        # max_p is bounded to 5 activations as a tractable approximation for WCRT;
+        # Processor Demand Analysis (PDA) below provides the full exact feasibility test.
         max_p = 5
         for p in range(max_p):
             d_ip = p * task.period_us + task.deadline_us
@@ -282,9 +299,13 @@ def _run_edf_analysis(tasks: List[AutosarTask], channel_latency: Dict[str, float
     def lcm(a, b):
         return a * b // gcd(a, b)
     
-    H = int(periodic[0].period_us)
-    for t in periodic[1:]:
-        H = lcm(H, int(t.period_us))
+    periods_int = [int(round(t.period_us)) for t in periodic]
+    if any(abs(round(t.period_us) - t.period_us) > 0.001 for t in periodic):
+        print("[RTA] Warning: fractional periods rounded to integer for PDA hyperperiod.", file=sys.stderr)
+
+    H = periods_int[0]
+    for p_int in periods_int[1:]:
+        H = lcm(H, p_int)
     H = min(H, 10000000) # cap at 10s for safety
 
     # Collect all scheduling points (all absolute deadlines <= H)

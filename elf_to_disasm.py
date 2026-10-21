@@ -62,7 +62,12 @@ def disassemble_elf(elf_path: str, out_path: str):
         print(f"Written: {out_path}")
 
 if __name__ == '__main__':
-    if len(sys.argv) < 3:
-        print("Usage: python elf_to_disasm.py firmware.elf output.txt")
-        sys.exit(1)
-    disassemble_elf(sys.argv[1], sys.argv[2])
+    import argparse
+    parser = argparse.ArgumentParser(
+        description="Generate objdump-style disassembly from an ARM ELF using pyelftools + capstone."
+    )
+    parser.add_argument("elf", help="Path to input firmware ELF file")
+    parser.add_argument("output", help="Path to output disassembly text file")
+    args = parser.parse_args()
+    disassemble_elf(args.elf, args.output)
+

@@ -1,6 +1,17 @@
+"""
+analysis/timing_model.py
+
+Hardware timing models derived from MCU reference manuals and ARM architecture specs.
+Provides wait-state lookup and ISR interrupt latency penalty calculations
+used by analysis/rules/isr_placement.py to evaluate flash execution penalties.
+"""
 from typing import Dict, Any
 
 def lookup_wait_states(freq_mhz: float, chip: dict) -> int:
+    """
+    Look up minimum Flash wait states required at the specified frequency
+    from the chip profile's flash_wait_states table.
+    """
     for entry in chip.get('flash_wait_states', []):
         if freq_mhz <= entry['freq_max_mhz']:
             return entry['ws']

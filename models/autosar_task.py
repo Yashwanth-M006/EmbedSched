@@ -6,7 +6,7 @@ class Resource:
     name: str
     type: str  # e.g., "mutex", "spinlock"
     accessed_by: List[str] = field(default_factory=list)
-    ceiling: int = 0  # Computed priority ceiling (highest priority of any task accessing it)
+    ceiling: float = float('inf')  # Computed priority ceiling (highest priority / lowest integer of any task accessing it)
     critical_section_us: float = 5.0  # Assumed default critical section length (could be derived from call graph)
     task_critical_sections_us: Dict[str, float] = field(default_factory=dict)
     # acquisition_order: {task_name: int} — the sequence order in which a task acquires this lock.

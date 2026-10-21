@@ -426,10 +426,8 @@ def check_concurrent_stack_pressure(
     findings = []
     
     # 1. Determine declared stack size
-    declared_size = 4096
-    if '_Min_Stack_Size' in merged_linker_symbols:
-        sym = merged_linker_symbols['_Min_Stack_Size']
-        declared_size = sym.address if hasattr(sym, 'address') else int(sym)
+    sym = merged_linker_symbols.get('_Min_Stack_Size', 4096)
+    declared_size = int(sym.address if hasattr(sym, 'address') else sym)
         
     # Group tasks by core (assume full preemption on each core)
     cores = {}
@@ -523,17 +521,16 @@ def check_deadlock_risk(resources: List) -> List[Finding]:
         def _dfs(node: str, path: list) -> list:
             visited.add(node)
             rec_stack.add(node)
-            path.append(node)
+            current_path = path + [node]
             for neighbour in graph.get(node, set()):
                 if neighbour not in visited:
-                    result = _dfs(neighbour, path)
+                    result = _dfs(neighbour, current_path)
                     if result:
                         return result
                 elif neighbour in rec_stack:
                     # Cycle detected — extract the cycle portion
-                    cycle_start = path.index(neighbour)
-                    return path[cycle_start:] + [neighbour]
-            path.pop()
+                    cycle_start = current_path.index(neighbour)
+                    return current_path[cycle_start:] + [neighbour]
             rec_stack.discard(node)
             return []
 
@@ -621,40 +618,39 @@ def check_entry_function_mismatches(
     findings = []
     has_error = False
 
+    from difflib import get_close_matches
+
     for t in tasks:
         if t.function in firmware_symbol_names:
             valid_tasks.append(t)
             continue
 
         # Function not found in firmware symbols. Check for close match by edit distance.
-        closest = None
-        min_dist = float('inf')
-        for sym_name in firmware_symbol_names:
-            d = levenshtein_distance(t.function, sym_name)
-            if d < min_dist:
-                min_dist = d
-                closest = sym_name
+        matches = get_close_matches(t.function, list(firmware_symbol_names), n=1, cutoff=0.6)
+        if matches:
+            closest = matches[0]
+            min_dist = levenshtein_distance(t.function, closest)
+            if min_dist <= 3:
+                has_error = True
+                print(f"Error: {t.name}: entry function '{t.function}' not found in firmware symbols")
+                print(f"Did you mean '{closest}'? (Levenshtein distance: {min_dist})")
 
-        if closest and min_dist <= 3:
-            has_error = True
-            print(f"Error: {t.name}: entry function '{t.function}' not found in firmware symbols")
-            print(f"Did you mean '{closest}'? (Levenshtein distance: {min_dist})")
+                findings.append(Finding(
+                    rule='autosar_entry_function_mismatch',
+                    severity='CRITICAL',
+                    tag='[STATIC]',
+                    message=(
+                        f"Error: {t.name}: entry function '{t.function}' not found in firmware symbols.\n"
+                        f"  Did you mean '{closest}'? (Levenshtein distance: {min_dist})\n"
+                        f"  Task '{t.name}' is excluded from schedulability analysis."
+                    ),
+                    fix=f"Update schedule.json: change entry_function from '{t.function}' to '{closest}'."
+                ))
+                # Task is excluded from valid_tasks for schedulability analysis
+                continue
 
-            findings.append(Finding(
-                rule='autosar_entry_function_mismatch',
-                severity='CRITICAL',
-                tag='[STATIC]',
-                message=(
-                    f"Error: {t.name}: entry function '{t.function}' not found in firmware symbols.\n"
-                    f"  Did you mean '{closest}'? (Levenshtein distance: {min_dist})\n"
-                    f"  Task '{t.name}' is excluded from schedulability analysis."
-                ),
-                fix=f"Update schedule.json: change entry_function from '{t.function}' to '{closest}'."
-            ))
-            # Task is excluded from valid_tasks for schedulability analysis
-        else:
-            # Not a typo of an existing firmware symbol, retain for standard heuristic handling
-            valid_tasks.append(t)
+        # Not a typo of an existing firmware symbol, retain for standard heuristic handling
+        valid_tasks.append(t)
 
     return valid_tasks, findings, has_error
 

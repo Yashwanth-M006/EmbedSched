@@ -14,40 +14,67 @@ def worst_case_stack_depth(
     A callee that is shallower but recursive does NOT override the
     deepest non-recursive callee for the call chain — but the
     has_recursion flag is still set so the caller reports it.
+
+    Uses an explicit work stack (iterative DFS) to prevent Python RecursionError
+    on deep firmware call chains.
     """
     if visited is None:
         visited = set()
     if entry in visited:
-        return (0, [entry], True)   # cycle detected — unbounded depth
-        
-    visited = visited | {entry}
-    own = stack_usage.get(entry, 0)
-    callees = call_graph.get(entry, set())
-    
-    if not callees:
-        return (own, [entry], False)
+        return (0, [entry], True)
 
-    best_depth = -1
-    best_chain: List[str] = []
-    # Track recursion separately — ANY recursive callee sets this True
-    # regardless of whether that callee is the deepest path.
-    any_recursion = False
+    root_callees = sorted(list(call_graph.get(entry, set())))
+    ancestors = set(visited)
+    ancestors.add(entry)
 
-    for callee in callees:
-        depth, chain, recurse = worst_case_stack_depth(
-            call_graph, stack_usage, callee, visited
-        )
-        if recurse:
-            any_recursion = True          # propagate unconditionally
-        if depth > best_depth:
-            best_depth = depth
-            best_chain = chain
+    # stack frames: [node, callees, callee_idx, best_depth, best_chain, any_recursion]
+    stack = [[entry, root_callees, 0, -1, [], False]]
+    memo: Dict[str, Tuple[int, List[str], bool]] = {}
 
-    if best_depth < 0:
-        best_depth = 0
+    while stack:
+        frame = stack[-1]
+        node, callees, idx, best_depth, best_chain, any_rec = frame
 
-    total = own + best_depth
-    return (total, [entry] + best_chain, any_recursion)
+        if idx < len(callees):
+            callee = callees[idx]
+            frame[2] += 1
+
+            if callee in ancestors:
+                # Cycle / recursion detected
+                frame[5] = True
+                if 0 > frame[3]:
+                    frame[3] = 0
+                    frame[4] = [callee]
+            elif callee in memo:
+                c_depth, c_chain, c_rec = memo[callee]
+                if c_rec:
+                    frame[5] = True
+                if c_depth > frame[3]:
+                    frame[3] = c_depth
+                    frame[4] = c_chain
+            else:
+                ancestors.add(callee)
+                c_callees = sorted(list(call_graph.get(callee, set())))
+                stack.append([callee, c_callees, 0, -1, [], False])
+        else:
+            stack.pop()
+            ancestors.discard(node)
+            own = stack_usage.get(node, 0)
+            if best_depth < 0:
+                best_depth = 0
+            total_depth = own + best_depth
+            final_chain = [node] + best_chain
+            memo[node] = (total_depth, final_chain, any_rec)
+
+            if stack:
+                parent = stack[-1]
+                if any_rec:
+                    parent[5] = True
+                if total_depth > parent[3]:
+                    parent[3] = total_depth
+                    parent[4] = final_chain
+
+    return memo[entry]
 
 def analyze_all_stacks(call_graph: Dict[str, Set[str]], stack_usage: Dict[str, int], entry_points: List[str]) -> Tuple[int, List[str], bool]:
     """

@@ -13,14 +13,16 @@ def parse_su_files(su_dir: str) -> Dict[str, int]:
     if not su_dir or not os.path.exists(su_dir):
         return usage
         
-    for filepath in glob.glob(os.path.join(su_dir, '**', '*.su'), recursive=True):
+    normalized_dir = os.path.normpath(su_dir)
+    for filepath in glob.glob(os.path.join(normalized_dir, '**', '*.su'), recursive=True):
+        filepath = os.path.normpath(filepath)
         with open(filepath, 'r', encoding='utf-8') as f:
             for line in f:
                 parts = line.strip().split()
                 if len(parts) >= 2:
                     location = parts[0]
                     # location is file:line:col:func
-                    func_name = location.split(':')[-1]
+                    func_name = location.split(':')[-1].strip()
                     try:
                         frame_size = int(parts[1])
                         usage[func_name] = frame_size

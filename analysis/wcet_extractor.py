@@ -32,6 +32,7 @@ Call-graph traversal:
    helper functions.
 """
 
+import sys
 from typing import Dict, Set, List, Optional, Tuple
 from models.autosar_task import AutosarTask
 from models.symbol import Symbol
@@ -68,6 +69,7 @@ CORE_DEFAULTS: Dict[str, Tuple[float, float]] = {
 
 DEFAULT_BYTES_PER_INSN = 2.50
 DEFAULT_CPI_PENALTY = 1.15
+DEFAULT_CLOCK_MHZ = 168.0
 
 # Backward compatibility aliases for module-level constants
 THUMB2_AVG_BYTES_PER_INSN = DEFAULT_BYTES_PER_INSN
@@ -152,7 +154,7 @@ def extract_wcets(
 
     for task in tasks:
         # Determine frequency for this core
-        freq_mhz = chip_profile.get('clock_max_mhz', 100.0) if chip_profile else 100.0
+        freq_mhz = chip_profile.get('clock_max_mhz', DEFAULT_CLOCK_MHZ) if chip_profile else DEFAULT_CLOCK_MHZ
         if chip_profile:
             cores_config = chip_profile.get('core_types', [])
             for c in cores_config:
@@ -170,7 +172,7 @@ def extract_wcets(
             entry_cycles = chip_profile.get('exception_entry_cycles', 12) if chip_profile else 12
             exception_cycles = entry_cycles * 2  # entry (12) + return (12) = 24 cycles
 
-            isr_clock_mhz = chip_profile.get('clock_max_mhz', 168.0) if chip_profile else 168.0
+            isr_clock_mhz = freq_mhz
             ws = 0
             if chip_profile and 'flash_wait_states' in chip_profile:
                 for entry in chip_profile['flash_wait_states']:
@@ -185,7 +187,7 @@ def extract_wcets(
             sym = sym_map.get(task.function)
             raw_bytes = sym.size if (sym and sym.size > 0) else 100
             if raw_bytes > 500:
-                raw_bytes = 100  # Clamp synthetic/fill anomalies to typical DMA ISR size (~100 bytes)
+                print(f"[WCET] Warning: ISR '{task.function}' code size {raw_bytes}B is unusually large (exceeds typical nominal handler size of ~100-500B).", file=sys.stderr)
 
             instruction_fetches = round(raw_bytes / bpi)
             if 35 <= instruction_fetches <= 48:
@@ -218,11 +220,25 @@ def extract_wcets(
 # ---------------------------------------------------------------------------
 
 def _build_symbol_map(symbols: List[Symbol]) -> Dict[str, Symbol]:
-    """Build a name → Symbol lookup. Keeps the one with the largest size for duplicates."""
+    """
+    Build a name → Symbol lookup.
+    Prefers symbols in executable sections (.text) when names collide, and takes
+    the largest size within the same section category.
+    """
     d = {}
     for s in symbols:
-        if s.name not in d or s.size > d[s.name].size:
+        if s.name not in d:
             d[s.name] = s
+        else:
+            existing = d[s.name]
+            s_text = s.section.startswith('.text') or '.text.' in s.section
+            ex_text = existing.section.startswith('.text') or '.text.' in existing.section
+            if s_text and not ex_text:
+                d[s.name] = s
+            elif not s_text and ex_text:
+                continue
+            elif s.size > existing.size:
+                d[s.name] = s
     return d
 
 

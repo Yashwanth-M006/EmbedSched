@@ -66,3 +66,6 @@ ehthumbs.db
 # Renode simulation / execution tracing outputs
 exec_trace*.txt
 sim.resc
+
+# Local generated analysis reports
+reports/

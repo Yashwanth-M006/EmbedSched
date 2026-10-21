@@ -25,9 +25,9 @@ OVERALL SCORE: 75 / 100
 FINDINGS (2 total: 1 critical, 0 warnings, 1 info)
 --------------------------------------------------
 
-┌──────────────────────────────────────────────────────────────────────────┐
-│ CRITICAL FINDINGS (1) - ACTION REQUIRED                                  │
-└──────────────────────────────────────────────────────────────────────────┘
++--------------------------------------------------------------------------+
+| CRITICAL FINDINGS (1) - ACTION REQUIRED                                  |
++--------------------------------------------------------------------------+
 
   [CRITICAL] [STATIC] autosar_entry_function_mismatch
     Error: Task_MotorControl: entry function 'motor_controll_loop' not found in firmware symbols.
@@ -35,12 +35,12 @@ FINDINGS (2 total: 1 critical, 0 warnings, 1 info)
       Task 'Task_MotorControl' is excluded from schedulability analysis.
     Fix: Update schedule.json: change entry_function from 'motor_controll_loop' to 'motor_control_loop'.
 
-┌──────────────────────────────────────────────────────────────────────────┐
-│ WARNING FINDINGS (0) - None Detected                                     │
-└──────────────────────────────────────────────────────────────────────────┘
-┌──────────────────────────────────────────────────────────────────────────┐
-│ INFORMATIONAL FINDINGS (1)                                               │
-└──────────────────────────────────────────────────────────────────────────┘
++--------------------------------------------------------------------------+
+| WARNING FINDINGS (0) - None Detected                                     |
++--------------------------------------------------------------------------+
++--------------------------------------------------------------------------+
+| INFORMATIONAL FINDINGS (1)                                               |
++--------------------------------------------------------------------------+
 
   [INFO] [STATIC] explicit_stack_found
     Explicit stack reservation found.
@@ -109,7 +109,7 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
   ────────────────────────────────────────────────────────────────────────────
   Task                    Activations  Max Jitter µs  Mean Jitter µs Assessment
   ────────────────────────────────────────────────────────────────────────────
-  Task_CANTransmit                  1          36.41           36.41  EXCELLENT  (<1% of period)
+  Task_CANTransmit                  1          39.79           39.79  EXCELLENT  (<1% of period)
   Task_SensorAgg                    5           0.00            0.00  EXCELLENT  (<1% of period)
   ────────────────────────────────────────────────────────────────────────────
   NOTE: Jitter is measured against the ideal periodic release time.

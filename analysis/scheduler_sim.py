@@ -32,9 +32,10 @@ Hyperperiod cap:
 
 import math
 import heapq
+import bisect
 from typing import List, Dict, Tuple, Optional
 from collections import defaultdict
-from models.autosar_task import AutosarTask
+from models.autosar_task import AutosarTask, CoreConfig
 
 MAX_HYPERPERIOD_US = 2_000_000         # 2,000 ms (2 seconds) — upper bound on simulated hyperperiod
 MAX_SIMULATION_ACTIVATIONS = 10_000    # Cap simulation if total activations exceed 10,000
@@ -85,7 +86,11 @@ class SimulationResult:
 # Public API
 # ---------------------------------------------------------------------------
 
-def simulate_schedule(tasks: List[AutosarTask], stochastic: bool = False) -> SimulationResult:
+def simulate_schedule(
+    tasks: List[AutosarTask],
+    stochastic: bool = False,
+    cores: Dict[int, CoreConfig] = None
+) -> SimulationResult:
     """
     Simulate the task set over one hyperperiod.
 
@@ -100,9 +105,9 @@ def simulate_schedule(tasks: List[AutosarTask], stochastic: bool = False) -> Sim
         return result
 
     # Group by core
-    cores: Dict[int, List[AutosarTask]] = {}
+    core_tasks_map: Dict[int, List[AutosarTask]] = {}
     for t in valid_tasks:
-        cores.setdefault(t.core_id, []).append(t)
+        core_tasks_map.setdefault(t.core_id, []).append(t)
 
     # Compute global system hyperperiod and simulation length across all tasks
     true_hp, global_sim_len, capped = _hyperperiod(valid_tasks)
@@ -110,8 +115,8 @@ def simulate_schedule(tasks: List[AutosarTask], stochastic: bool = False) -> Sim
     result.capped = capped
 
     # Simulate every core for the SAME global simulation length
-    for core_id, core_tasks in sorted(cores.items()):
-        _simulate_core(core_id, core_tasks, global_sim_len, result, stochastic)
+    for core_id, core_tasks in sorted(core_tasks_map.items()):
+        _simulate_core(core_id, core_tasks, global_sim_len, result, stochastic, cores)
 
     return result
 
@@ -126,16 +131,23 @@ def _simulate_core(
     hyperperiod: float,
     result: SimulationResult,
     stochastic: bool = False,
+    cores: Dict[int, CoreConfig] = None,
 ) -> None:
     """
-    Simulate one core using a greedy preemptive fixed-priority scheduler.
+    Simulate one core using a greedy preemptive fixed-priority or EDF scheduler.
+    Note: Cross-core channel latencies are modeled as bounded blocking in RTA;
+    local core simulation timelines execute without simulating active cross-core IPC stalls.
 
     Ready queue: max-heap keyed by (-priority, release_time) so that
     equal-priority tasks are FIFO by release order.
     """
     import random
 
-    is_edf = any(t.priority is None or t.priority == 255 for t in tasks)
+    if cores and core_id in cores:
+        is_edf = (cores[core_id].algorithm == "EDF")
+    else:
+        # Fallback only when core config is omitted: true EDF tasks lack fixed priorities
+        is_edf = any(t.priority is None for t in tasks)
 
     # Generate all release events in [0, hyperperiod)
     # Each event: (release_time, deadline_abs, remaining_wcet, task)
@@ -273,12 +285,13 @@ def _next_release_before(
 ) -> Optional[float]:
     """
     Find the earliest release time > now of a task with higher priority (or earlier deadline).
+    Uses binary search to skip past releases, then scans forward.
     Returns None if no such release exists before hyperperiod.
     """
-    for i in range(from_idx, len(releases)):
+    start_idx = max(from_idx, bisect.bisect_right(releases, now + 1e-9, key=lambda x: x[0]))
+    for i in range(start_idx, len(releases)):
         rel_t, dl, _, task = releases[i]
-        if rel_t > now + 1e-9:
-            key = dl if is_edf else (task.priority if task.priority is not None else 255)
-            if key < current_prio_key:
-                return rel_t
+        key = dl if is_edf else (task.priority if task.priority is not None else 255)
+        if key < current_prio_key:
+            return rel_t
     return None

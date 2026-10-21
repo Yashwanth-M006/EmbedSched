@@ -107,11 +107,18 @@ def _parse_json(path: str) -> AutosarConfig:
         elif 'critical_sections_us' in r:
             task_cs = {k: float(v) for k, v in r['critical_sections_us'].items()}
 
+        if 'max_critical_section_ms' in r:
+            cs_us = float(r['max_critical_section_ms']) * 1000.0
+        elif 'critical_section_us' in r:
+            cs_us = float(r['critical_section_us'])
+        else:
+            cs_us = 5.0
+
         resources.append(Resource(
             name=r['name'],
             type=r.get('type', 'mutex'),
             accessed_by=r.get('accessed_by', []),
-            critical_section_us=float(r.get('max_critical_section_ms', r.get('critical_section_us', 0.005))) * 1000.0 if 'max_critical_section_ms' in r else float(r.get('critical_section_us', 5.0)),
+            critical_section_us=cs_us,
             task_critical_sections_us=task_cs,
             acquisition_order=r.get('acquisition_order', {}),
         ))
