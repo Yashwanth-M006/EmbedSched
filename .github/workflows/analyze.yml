@@ -119,16 +119,19 @@ jobs:
           if [ -f reports/analysis_report.md ]; then
             cat reports/analysis_report.md >> $GITHUB_STEP_SUMMARY
 
-            # If charts were generated, embed them directly into the summary
+            # Embed generated charts into job summary
             if [ -d reports/charts ] && [ "$(ls -A reports/charts)" ]; then
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "## 📈 Generated Visual Charts" >> $GITHUB_STEP_SUMMARY
+              
+              # If the test suite has tracked charts in the repository, link them via raw.githubusercontent
+              RAW_BASE="https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/tests/$TARGET/charts"
+              
               for img in reports/charts/*.png; do
                 if [ -f "$img" ]; then
                   fname=$(basename "$img")
                   echo "### $fname" >> $GITHUB_STEP_SUMMARY
-                  b64=$(base64 -w 0 "$img" 2>/dev/null || base64 "$img")
-                  echo "<img src=\"data:image/png;base64,$b64\" width=\"750\" />" >> $GITHUB_STEP_SUMMARY
+                  echo "![$fname]($RAW_BASE/$fname)" >> $GITHUB_STEP_SUMMARY
                   echo "" >> $GITHUB_STEP_SUMMARY
                 fi
               done
