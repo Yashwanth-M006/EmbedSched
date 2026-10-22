@@ -1,0 +1,265 @@
+name: EmbedSched — Analyze Your Own Firmware
+
+# ─────────────────────────────────────────────────────────────────────────────
+# USER GUIDE
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# This workflow lets you analyze YOUR OWN firmware — no repo fork needed.
+#
+# STEP 1 — Host your firmware files somewhere publicly accessible:
+#
+#   Option A: GitHub Release assets (recommended)
+#     Upload your files to any public GitHub Release, then copy the asset URLs.
+#     Example URL format:
+#       https://github.com/your-org/your-repo/releases/download/v1.0/firmware.elf
+#
+#   Option B: A public Gist
+#     Create a gist at https://gist.github.com, upload your files, then
+#     use the "Raw" URL for each file.
+#
+#   Option C: Any public URL (Google Drive public share, file.io, etc.)
+#
+# STEP 2 — Click "Run workflow" and paste the URLs below.
+#
+# REQUIRED:
+#   - ELF File URL       (.elf binary)
+#   - MAP File URL       (.map linker output)
+#   - Linker Script URL  (.ld file)
+#   - Chip Profile URL   (chip YAML — use one from chips/ in this repo if needed)
+#
+# OPTIONAL:
+#   - AUTOSAR Config URL (schedule.json) — enables schedulability analysis +
+#                         Gantt/jitter charts. See sample at
+#                         tests/Test_Suite2/Test_1/schedule.json
+#
+# STEP 3 — When the run completes:
+#   - Read the formatted report in the "Summary" tab of the run page
+#   - Download "embedsched-custom-report.zip" from the Artifacts section for
+#     the full report (Markdown) + all chart PNGs
+#
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+    inputs:
+      elf_url:
+        description: >
+          PUBLIC URL to your firmware ELF file (.elf)
+          e.g. https://github.com/you/repo/releases/download/v1/firmware.elf
+        required: true
+        default: ''
+      map_url:
+        description: >
+          PUBLIC URL to your linker MAP file (.map)
+        required: true
+        default: ''
+      ld_url:
+        description: >
+          PUBLIC URL to your linker script (.ld)
+        required: true
+        default: ''
+      chip_url:
+        description: >
+          PUBLIC URL to chip profile YAML (.yaml).
+          Don't have one? Use a built-in chip from this repo, e.g.:
+          https://raw.githubusercontent.com/Yashwanth-M006/EmbedSched/main/chips/stm32f407.yaml
+        required: true
+        default: 'https://raw.githubusercontent.com/Yashwanth-M006/EmbedSched/main/chips/stm32f407.yaml'
+      autosar_url:
+        description: >
+          (Optional) PUBLIC URL to AUTOSAR task config (.json).
+          Enables schedulability analysis, RTA table, Gantt + jitter charts.
+          See tests/Test_Suite2/Test_1/schedule.json for the format.
+        required: false
+        default: ''
+      su_dir_url:
+        description: >
+          (Optional) PUBLIC URL to a ZIP of .su stack-usage files (directory).
+          Leave blank to use code-size heuristic WCET instead.
+        required: false
+        default: ''
+      firmware_name:
+        description: >
+          A short label for your firmware (used in artifact name).
+          e.g. "my-motor-controller-v2"
+        required: false
+        default: 'custom-firmware'
+      stochastic:
+        description: 'Enable stochastic WCET variance in scheduler simulation?'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+jobs:
+  analyze-custom:
+    name: Analyze Custom Firmware
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Checkout (needed for main.py, parsers, chips/) ─────────────────
+      - name: Checkout EmbedSched
+        uses: actions/checkout@v4
+
+      # ── 2. Python setup ───────────────────────────────────────────────────
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      # ── 3. ARM toolchain ──────────────────────────────────────────────────
+      - name: Install ARM GNU Toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-arm-none-eabi binutils-arm-none-eabi
+          arm-none-eabi-objdump --version
+
+      # ── 4. Python dependencies ────────────────────────────────────────────
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # ── 5. Download user-supplied firmware files ──────────────────────────
+      - name: Download Firmware Files
+        id: download
+        run: |
+          set -euo pipefail
+          mkdir -p firmware_input reports/charts
+
+          # ── Helper: download with error checking ──────────────────────────
+          download_file() {
+            local url="$1"
+            local dest="$2"
+            local label="$3"
+            if [ -z "$url" ]; then
+              echo "  $label: skipped (no URL provided)"
+              return
+            fi
+            echo "  Downloading $label from: $url"
+            HTTP_STATUS=$(curl -L -o "$dest" -w "%{http_code}" --fail --silent --show-error "$url" 2>&1) || {
+              echo "::error::Failed to download $label — HTTP $HTTP_STATUS — URL: $url"
+              echo "  Make sure the URL is publicly accessible (no login required)."
+              exit 1
+            }
+            local size=$(wc -c < "$dest")
+            echo "  ✅ $label downloaded (${size} bytes) → $dest"
+          }
+
+          # ── Required files ────────────────────────────────────────────────
+          download_file "${{ github.event.inputs.elf_url }}" "firmware_input/firmware.elf"  "ELF"
+          download_file "${{ github.event.inputs.map_url }}" "firmware_input/firmware.map"  "MAP"
+          download_file "${{ github.event.inputs.ld_url  }}" "firmware_input/linker.ld"     "Linker Script"
+          download_file "${{ github.event.inputs.chip_url}}" "firmware_input/chip.yaml"     "Chip Profile YAML"
+
+          # ── Optional files ────────────────────────────────────────────────
+          HAS_AUTOSAR="false"
+          if [ -n "${{ github.event.inputs.autosar_url }}" ]; then
+            download_file "${{ github.event.inputs.autosar_url }}" "firmware_input/schedule.json" "AUTOSAR Config"
+            HAS_AUTOSAR="true"
+          fi
+
+          HAS_SU="false"
+          if [ -n "${{ github.event.inputs.su_dir_url }}" ]; then
+            download_file "${{ github.event.inputs.su_dir_url }}" "firmware_input/su_files.zip" ".su Files ZIP"
+            mkdir -p firmware_input/su
+            unzip -q firmware_input/su_files.zip -d firmware_input/su
+            HAS_SU="true"
+            echo "  .su files extracted:"
+            find firmware_input/su -name "*.su" -exec echo "    {}" \;
+          fi
+
+          echo "HAS_AUTOSAR=$HAS_AUTOSAR" >> $GITHUB_OUTPUT
+          echo "HAS_SU=$HAS_SU"           >> $GITHUB_OUTPUT
+
+          # ── Validate ELF is a real ARM ELF ───────────────────────────────
+          echo "--- Validating ELF ---"
+          file firmware_input/firmware.elf
+          arm-none-eabi-objdump -f firmware_input/firmware.elf | head -5 || {
+            echo "::error::The provided ELF file does not appear to be a valid ARM ELF binary."
+            exit 1
+          }
+          echo "✅ ELF validation passed."
+
+      # ── 6. Run EmbedSched analysis ────────────────────────────────────────
+      - name: Run EmbedSched Analysis
+        run: |
+          set -euo pipefail
+
+          CMD_ARGS=(
+            python main.py
+            --elf  firmware_input/firmware.elf
+            --map  firmware_input/firmware.map
+            --ld   firmware_input/linker.ld
+            --chip firmware_input/chip.yaml
+            --output reports/analysis_report.md
+          )
+
+          if [ "${{ steps.download.outputs.HAS_SU }}" = "true" ]; then
+            CMD_ARGS+=(--su-dir firmware_input/su)
+          fi
+
+          if [ "${{ steps.download.outputs.HAS_AUTOSAR }}" = "true" ]; then
+            CMD_ARGS+=(--autosar-config firmware_input/schedule.json)
+            CMD_ARGS+=(--charts-dir reports/charts)
+            [ "${{ github.event.inputs.stochastic }}" = "true" ] && CMD_ARGS+=(--stochastic-sim)
+          else
+            CMD_ARGS+=(--no-autosar-sim)
+          fi
+
+          echo "=== Running: ${CMD_ARGS[*]} ==="
+          "${CMD_ARGS[@]}"
+
+      # ── 7. Publish report to Job Summary ─────────────────────────────────
+      - name: Publish Report in Job Summary
+        if: always()
+        run: |
+          {
+            echo "## 🛡️ EmbedSched Analysis — ${{ github.event.inputs.firmware_name }}"
+            echo ""
+            echo "> **Firmware:** \`${{ github.event.inputs.firmware_name }}\`  "
+            echo "> **Run:** [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})  "
+            echo "> **Triggered by:** @${{ github.actor }}"
+            echo ""
+          } >> $GITHUB_STEP_SUMMARY
+
+          if [ -f reports/analysis_report.md ]; then
+            cat reports/analysis_report.md >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ⚠️ Analysis did not complete — check the job logs above." >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Charts: embed via base64 (custom firmware has no raw.githubusercontent path)
+          if [ -d reports/charts ] && [ -n "$(ls -A reports/charts 2>/dev/null)" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "## 📈 Schedulability & Timing Charts" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "> Charts are embedded below. Full-resolution PNGs are in the downloaded artifact." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            for img in reports/charts/schedulability_dashboard.png \
+                       reports/charts/gantt_chart.png \
+                       reports/charts/response_time_chart.png \
+                       reports/charts/jitter_chart.png; do
+              [ -f "$img" ] || continue
+              fname=$(basename "$img")
+              label="${fname%.png}"; label="${label//_/ }"
+              b64=$(base64 -w 0 "$img")
+              echo "### 📊 ${label^}" >> $GITHUB_STEP_SUMMARY
+              echo "<img src=\"data:image/png;base64,${b64}\" alt=\"${fname}\" width=\"740\">" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            done
+          fi
+
+      # ── 8. Upload full artifact bundle ────────────────────────────────────
+      - name: Upload Report & Charts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: embedsched-${{ github.event.inputs.firmware_name }}-report
+          path: |
+            reports/
+          retention-days: 30
