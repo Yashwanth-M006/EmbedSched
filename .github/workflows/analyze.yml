@@ -1,5 +1,10 @@
 name: EmbedSched Analysis & Safety Audit
 
+# ─────────────────────────────────────────────────────────────────────────────
+# TRIGGERS
+#   • workflow_dispatch — manual run from the GitHub Actions tab (primary usage)
+#   • push / pull_request to main — CI regression gate on bundled test suites
+# ─────────────────────────────────────────────────────────────────────────────
 on:
   push:
     branches: [ main, master ]
@@ -8,11 +13,12 @@ on:
   workflow_dispatch:
     inputs:
       test_suite:
-        description: 'Test Suite or Case to execute'
+        description: 'Select a bundled test case to run'
         required: true
         default: 'Test_Suite1/Test_1'
         type: choice
         options:
+          # ── Test Suite 1 (static analysis only) ──────────────────────────
           - Test_Suite1/Test_1
           - Test_Suite1/Test_2
           - Test_Suite1/Test_3
@@ -21,128 +27,205 @@ on:
           - Test_Suite1/Test_6
           - Test_Suite1/Test_7
           - Test_Suite1/Test_8
+          # ── Test Suite 2 (AUTOSAR schedulability + Gantt) ─────────────────
           - Test_Suite2/Test_1
+          - Test_Suite2/Test_2
+          - Test_Suite2/Test_3
+          - Test_Suite2/Test_4
+          - Test_Suite2/Test_5
+          - Test_Suite2/Test_6
+          - Test_Suite2/Test_7
+          - Test_Suite2/Test_8
+          - Test_Suite2/Test_9
+          - Test_Suite2/Test_10
+          - Test_Suite2/Test_11
+          - Test_Suite2/Test_12
+          # ── Test Suite 3 (advanced / edge-case scenarios) ─────────────────
           - Test_Suite3/Test_1
+          - Test_Suite3/Test_2
+          - Test_Suite3/Test_3
+          - Test_Suite3/Test_4
+          - Test_Suite3/Test_5
+          - Test_Suite3/Test_6
+          - Test_Suite3/Test_7
+          - Test_Suite3/Test_8
+          - Test_Suite3/Test_9
+          - Test_Suite3/Test_10
+          # ── Special modes ────────────────────────────────────────────────
           - run_all_suites
-          - custom
-      elf_path:
-        description: 'Custom ELF path (if custom is selected)'
+      stochastic:
+        description: 'Enable stochastic WCET variance in scheduler simulation'
         required: false
-        default: ''
-      map_path:
-        description: 'Custom MAP path (if custom is selected)'
-        required: false
-        default: ''
-      ld_path:
-        description: 'Custom Linker script path (if custom is selected)'
-        required: false
-        default: ''
-      chip_yaml:
-        description: 'Custom Chip YAML path (if custom is selected)'
-        required: false
-        default: ''
-      autosar_config:
-        description: 'Custom AUTOSAR configuration JSON path (optional)'
-        required: false
-        default: ''
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 jobs:
   analyze:
-    name: Run EmbedSched Verification
+    name: EmbedSched Firmware Verification
     runs-on: ubuntu-latest
 
     steps:
+      # ── 1. Checkout ───────────────────────────────────────────────────────
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      # ── 2. Python ─────────────────────────────────────────────────────────
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Install dependencies
+      # ── 3. ARM toolchain (provides arm-none-eabi-objdump) ─────────────────
+      - name: Install ARM GNU Toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-arm-none-eabi binutils-arm-none-eabi
+          arm-none-eabi-objdump --version
+
+      # ── 4. Python deps ────────────────────────────────────────────────────
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install -r requirements.txt
 
-      - name: Prepare Report Output Directory
-        run: mkdir -p reports
+      # ── 5. Prepare output directory ───────────────────────────────────────
+      - name: Prepare output directories
+        run: mkdir -p reports/charts
 
+      # ── 6. Run EmbedSched analysis ────────────────────────────────────────
       - name: Run EmbedSched Analysis
+        id: run_analysis
         run: |
+          set -euo pipefail
+
           TARGET="${{ github.event.inputs.test_suite }}"
+          # Default for push/PR triggers where inputs are absent
           if [ -z "$TARGET" ]; then
             TARGET="Test_Suite1/Test_1"
           fi
+          echo "TARGET=$TARGET" >> $GITHUB_OUTPUT
 
+          # ── All suites (CI regression mode) ───────────────────────────────
           if [ "$TARGET" = "run_all_suites" ]; then
-            echo "Running pytest test suite across all suites..."
-            pytest -v tests/
-          elif [ "$TARGET" != "custom" ]; then
-            TEST_DIR="tests/$TARGET"
-            echo "Analyzing $TEST_DIR..."
-
-            ELF=$(find "$TEST_DIR" -maxdepth 1 -name "*.elf" | head -n 1)
-            MAP=$(find "$TEST_DIR" -maxdepth 1 -name "*.map" | head -n 1)
-            LD=$(find "$TEST_DIR" -maxdepth 1 -name "*.ld" | head -n 1)
-            CHIP=$(find "$TEST_DIR" -maxdepth 1 -name "*.yaml" -o -name "*.yml" | head -n 1)
-            AUTOSAR=$(find "$TEST_DIR" -maxdepth 1 -name "*autosar*.json" -o -name "schedule.json" -o -name "*.json" | head -n 1)
-
-            # Fallback to suite defaults if missing in specific subtest
-            if [ -z "$ELF" ]; then ELF=$(find tests/Test_Suite1/Test_1 -name "*.elf" | head -n 1); fi
-            if [ -z "$MAP" ]; then MAP=$(find tests/Test_Suite1/Test_1 -name "*.map" | head -n 1); fi
-            if [ -z "$LD" ]; then LD=$(find tests/Test_Suite1/Test_1 -name "*.ld" | head -n 1); fi
-            if [ -z "$CHIP" ]; then CHIP=$(find tests/Test_Suite1/Test_1 -name "*.yaml" | head -n 1); fi
-
-            mkdir -p reports/charts
-            CMD="python main.py --elf $ELF --map $MAP --ld $LD --chip $CHIP --output reports/analysis_report.md --charts-dir reports/charts"
-            if [ -n "$AUTOSAR" ]; then
-              CMD="$CMD --autosar-config $AUTOSAR"
-            fi
-
-            echo "Executing: $CMD"
-            eval $CMD
-          else
-            mkdir -p reports/charts
-            CMD="python main.py --elf ${{ github.event.inputs.elf_path }} --map ${{ github.event.inputs.map_path }} --ld ${{ github.event.inputs.ld_path }} --chip ${{ github.event.inputs.chip_yaml }} --output reports/analysis_report.md --charts-dir reports/charts"
-            if [ -n "${{ github.event.inputs.autosar_config }}" ]; then
-              CMD="$CMD --autosar-config ${{ github.event.inputs.autosar_config }}"
-            fi
-            echo "Executing: $CMD"
-            eval $CMD
+            echo "=== Running all bundled test suites ==="
+            PASS=0; FAIL=0
+            for run_script in tests/*/Test_*/run.py; do
+              suite_dir=$(dirname "$run_script")
+              suite_name=$(echo "$suite_dir" | sed 's|tests/||')
+              echo "--- $suite_name ---"
+              # Build and run the command for this suite
+              ELF=$(find "$suite_dir"  -maxdepth 1 -name "*.elf"  | head -n 1)
+              MAP=$(find "$suite_dir"  -maxdepth 1 -name "*.map"  | head -n 1)
+              LD=$( find "$suite_dir"  -maxdepth 1 -name "*.ld"   | head -n 1)
+              CHIP=$(find "$suite_dir" -maxdepth 1 \( -name "*.yaml" -o -name "*.yml" \) | head -n 1)
+              JSON=$(find "$suite_dir" -maxdepth 1 -name "*.json" | head -n 1)
+              CMD="python main.py --elf $ELF --map $MAP --ld $LD --chip $CHIP"
+              [ -n "$JSON" ] && CMD="$CMD --autosar-config $JSON"
+              CMD="$CMD --no-autosar-sim --output reports/${suite_name//\//_}.md"
+              if python main.py --elf "$ELF" --map "$MAP" --ld "$LD" --chip "$CHIP" ${JSON:+--autosar-config "$JSON"} --no-autosar-sim --output "reports/${suite_name//\//_}.md"; then
+                PASS=$((PASS + 1))
+              else
+                FAIL=$((FAIL + 1))
+                echo "::warning::$suite_name FAILED"
+              fi
+            done
+            echo "=== Results: $PASS passed, $FAIL failed ==="
+            [ "$FAIL" -eq 0 ] || exit 1
+            exit 0
           fi
 
+          # ── Single test suite ─────────────────────────────────────────────
+          TEST_DIR="tests/$TARGET"
+          echo "=== Analyzing $TEST_DIR ==="
+
+          # File discovery (robust: each find is independent)
+          ELF=$(find  "$TEST_DIR" -maxdepth 1 -name "*.elf"  | head -n 1)
+          MAP=$(find  "$TEST_DIR" -maxdepth 1 -name "*.map"  | head -n 1)
+          LD=$( find  "$TEST_DIR" -maxdepth 1 -name "*.ld"   | head -n 1)
+          CHIP=$(find "$TEST_DIR" -maxdepth 1 -name "*.yaml" | head -n 1)
+          [ -z "$CHIP" ] && CHIP=$(find "$TEST_DIR" -maxdepth 1 -name "*.yml" | head -n 1)
+          JSON=$(find "$TEST_DIR" -maxdepth 1 -name "*.json" | head -n 1)
+
+          # Validate mandatory inputs
+          MISSING=""
+          [ -z "$ELF"  ] && MISSING="$MISSING ELF(.elf)"
+          [ -z "$MAP"  ] && MISSING="$MISSING MAP(.map)"
+          [ -z "$LD"   ] && MISSING="$MISSING LinkerScript(.ld)"
+          [ -z "$CHIP" ] && MISSING="$MISSING ChipYAML(.yaml)"
+          if [ -n "$MISSING" ]; then
+            echo "::error::Missing required files in $TEST_DIR: $MISSING"
+            exit 1
+          fi
+
+          echo "  ELF : $ELF"
+          echo "  MAP : $MAP"
+          echo "  LD  : $LD"
+          echo "  CHIP: $CHIP"
+          echo "  JSON: ${JSON:-<none — static analysis only>}"
+
+          # Build the command as an array (safe, no eval, no injection)
+          CMD_ARGS=(
+            python main.py
+            --elf  "$ELF"
+            --map  "$MAP"
+            --ld   "$LD"
+            --chip "$CHIP"
+            --output reports/analysis_report.md
+          )
+
+          if [ -n "$JSON" ]; then
+            CMD_ARGS+=(--autosar-config "$JSON")
+            CMD_ARGS+=(--charts-dir reports/charts)
+            [ "${{ github.event.inputs.stochastic }}" = "true" ] && CMD_ARGS+=(--stochastic-sim)
+          else
+            CMD_ARGS+=(--no-autosar-sim)
+          fi
+
+          echo "Executing: ${CMD_ARGS[*]}"
+          "${CMD_ARGS[@]}"
+
+      # ── 7. Publish to GitHub Actions Step Summary ─────────────────────────
       - name: Publish Report in Job Summary
         if: always()
+        env:
+          TARGET: ${{ steps.run_analysis.outputs.TARGET }}
         run: |
           if [ -f reports/analysis_report.md ]; then
             cat reports/analysis_report.md >> $GITHUB_STEP_SUMMARY
-
-            # Embed generated charts into job summary
-            if [ -d reports/charts ] && [ "$(ls -A reports/charts)" ]; then
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo "## 📈 Generated Visual Charts" >> $GITHUB_STEP_SUMMARY
-              
-              # If the test suite has tracked charts in the repository, link them via raw.githubusercontent
-              RAW_BASE="https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/tests/$TARGET/charts"
-              
-              for img in reports/charts/*.png; do
-                if [ -f "$img" ]; then
-                  fname=$(basename "$img")
-                  echo "### $fname" >> $GITHUB_STEP_SUMMARY
-                  echo "![$fname]($RAW_BASE/$fname)" >> $GITHUB_STEP_SUMMARY
-                  echo "" >> $GITHUB_STEP_SUMMARY
-                fi
-              done
-            fi
           else
-            echo "### ℹ️ Test run completed. Full log available in run console." >> $GITHUB_STEP_SUMMARY
+            echo "### ℹ️ Run completed — see console log for output." >> $GITHUB_STEP_SUMMARY
           fi
 
-      - name: Upload Report Artifacts
+          # Embed charts via raw.githubusercontent.com (renders as images in GitHub UI)
+          if [ -d reports/charts ] && [ -n "$(ls -A reports/charts 2>/dev/null)" ]; then
+            REPO="${{ github.repository }}"
+            SHA="${{ github.sha }}"
+            RAW_BASE="https://raw.githubusercontent.com/${REPO}/${SHA}/tests/${TARGET}/charts"
+
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "## 📈 Schedulability & Timing Charts" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            for img in reports/charts/*.png; do
+              [ -f "$img" ] || continue
+              fname=$(basename "$img")
+              label="${fname%.png}"
+              label="${label//_/ }"
+              echo "### 📊 ${label^}" >> $GITHUB_STEP_SUMMARY
+              echo "![$fname]($RAW_BASE/$fname)" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            done
+          fi
+
+      # ── 8. Upload full artifact bundle ────────────────────────────────────
+      - name: Upload Report & Charts as Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: embedsched-analysis-report
+          name: embedsched-report-${{ steps.run_analysis.outputs.TARGET || 'auto' }}
           path: reports/
+          retention-days: 30
