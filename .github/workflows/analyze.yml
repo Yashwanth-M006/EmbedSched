@@ -53,6 +53,15 @@ on:
           - Test_Suite3/Test_10
           # ── Special modes ────────────────────────────────────────────────
           - run_all_suites
+      enable_renode:
+        description: 'Run Renode functional simulation (if .repl platform or trace is present)'
+        required: false
+        default: 'auto'
+        type: choice
+        options:
+          - 'auto'
+          - 'true'
+          - 'false'
       stochastic:
         description: 'Enable stochastic WCET variance in scheduler simulation'
         required: false
@@ -86,17 +95,26 @@ jobs:
           sudo apt-get install -y -qq gcc-arm-none-eabi binutils-arm-none-eabi
           arm-none-eabi-objdump --version
 
-      # ── 4. Python deps ────────────────────────────────────────────────────
+      # ── 4. Install Renode Simulation Framework ─────────────────────────────
+      - name: Install Renode Simulator
+        run: |
+          mkdir -p $HOME/renode
+          echo "Downloading Renode Linux portable package..."
+          curl -sSL "https://github.com/renode/renode/releases/download/v1.15.3/renode-1.15.3.linux-portable.tar.gz" | tar -xz -C $HOME/renode --strip-components=1
+          echo "$HOME/renode" >> $GITHUB_PATH
+          echo "Renode installed successfully."
+
+      # ── 5. Python deps ────────────────────────────────────────────────────
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # ── 5. Prepare output directory ───────────────────────────────────────
+      # ── 6. Prepare output directory ───────────────────────────────────────
       - name: Prepare output directories
         run: mkdir -p reports/charts
 
-      # ── 6. Run EmbedSched analysis ────────────────────────────────────────
+      # ── 7. Run EmbedSched analysis ────────────────────────────────────────
       - name: Run EmbedSched Analysis
         id: run_analysis
         run: |
@@ -177,6 +195,21 @@ jobs:
             --output reports/analysis_report.md
           )
 
+          # ── Renode simulation auto-wiring ────────────────────────────────
+          REPL=$(find  "$TEST_DIR" -maxdepth 1 -name "*.repl" | head -n 1)
+          TRACE=$(find "$TEST_DIR" -maxdepth 1 -name "*trace*.txt" | head -n 1)
+          RENODE_MODE="${{ github.event.inputs.enable_renode || 'auto' }}"
+
+          if [ "$RENODE_MODE" != "false" ]; then
+            if [ -n "$REPL" ]; then
+              echo "  [Renode] Detected platform: $REPL -> Activating live 2000ms simulation"
+              CMD_ARGS+=(--renode-repl "$REPL" --renode-sim-ms 2000)
+            elif [ -n "$TRACE" ]; then
+              echo "  [Renode] Detected trace: $TRACE -> Parsing instruction counts"
+              CMD_ARGS+=(--renode-trace "$TRACE")
+            fi
+          fi
+
           if [ -n "$JSON" ]; then
             CMD_ARGS+=(--autosar-config "$JSON")
             CMD_ARGS+=(--charts-dir reports/charts)
@@ -188,7 +221,7 @@ jobs:
           echo "Executing: ${CMD_ARGS[*]}"
           "${CMD_ARGS[@]}"
 
-      # ── 7. Publish to GitHub Actions Step Summary ─────────────────────────
+      # ── 8. Publish to GitHub Actions Step Summary ─────────────────────────
       - name: Publish Report in Job Summary
         if: always()
         env:
@@ -221,7 +254,7 @@ jobs:
             done
           fi
 
-      # ── 8. Upload full artifact bundle ────────────────────────────────────
+      # ── 9. Upload full artifact bundle ────────────────────────────────────
       - name: Upload Report & Charts as Artifacts
         if: always()
         uses: actions/upload-artifact@v4

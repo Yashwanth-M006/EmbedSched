@@ -31,6 +31,9 @@ name: EmbedSched — Analyze Your Own Firmware
 #   - AUTOSAR Config URL (schedule.json) — enables schedulability analysis +
 #                         Gantt/jitter charts. See sample at
 #                         tests/Test_Suite2/Test_1/schedule.json
+#   - Renode Platform URL (.repl) — runs full live MCU simulation to generate
+#                         accurate [SIMULATED] execution traces and instruction counts!
+#   - Renode Trace URL    (.txt)  — pre-generated Renode execution trace
 #
 # STEP 3 — When the run completes:
 #   - Read the formatted report in the "Summary" tab of the run page
@@ -72,6 +75,22 @@ on:
           See tests/Test_Suite2/Test_1/schedule.json for the format.
         required: false
         default: ''
+      repl_url:
+        description: >
+          (Optional) PUBLIC URL to Renode platform description (.repl).
+          Runs live MCU simulation on GitHub Actions to produce [SIMULATED] execution traces.
+          Example: https://raw.githubusercontent.com/Yashwanth-M006/EmbedSched/main/tests/Test_Suite1/Test_1/stm32f407.repl
+        required: false
+        default: ''
+      trace_url:
+        description: >
+          (Optional) PUBLIC URL to a pre-generated Renode trace (.txt).
+        required: false
+        default: ''
+      sim_duration_ms:
+        description: 'Renode simulation duration in ms (if .repl is provided)'
+        required: false
+        default: '2000'
       su_dir_url:
         description: >
           (Optional) PUBLIC URL to a ZIP of .su stack-usage files (directory).
@@ -117,13 +136,22 @@ jobs:
           sudo apt-get install -y -qq gcc-arm-none-eabi binutils-arm-none-eabi
           arm-none-eabi-objdump --version
 
-      # ── 4. Python dependencies ────────────────────────────────────────────
+      # ── 4. Install Renode Simulation Framework ─────────────────────────────
+      - name: Install Renode Simulator
+        run: |
+          mkdir -p $HOME/renode
+          echo "Downloading Renode Linux portable package..."
+          curl -sSL "https://github.com/renode/renode/releases/download/v1.15.3/renode-1.15.3.linux-portable.tar.gz" | tar -xz -C $HOME/renode --strip-components=1
+          echo "$HOME/renode" >> $GITHUB_PATH
+          echo "Renode installed successfully."
+
+      # ── 5. Python dependencies ────────────────────────────────────────────
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # ── 5. Download user-supplied firmware files ──────────────────────────
+      # ── 6. Download user-supplied firmware files ──────────────────────────
       - name: Download Firmware Files
         id: download
         run: |
@@ -162,6 +190,18 @@ jobs:
             HAS_AUTOSAR="true"
           fi
 
+          HAS_REPL="false"
+          if [ -n "${{ github.event.inputs.repl_url }}" ]; then
+            download_file "${{ github.event.inputs.repl_url }}" "firmware_input/platform.repl" "Renode Platform (.repl)"
+            HAS_REPL="true"
+          fi
+
+          HAS_TRACE="false"
+          if [ -n "${{ github.event.inputs.trace_url }}" ]; then
+            download_file "${{ github.event.inputs.trace_url }}" "firmware_input/renode_trace.txt" "Pre-generated Renode Trace (.txt)"
+            HAS_TRACE="true"
+          fi
+
           HAS_SU="false"
           if [ -n "${{ github.event.inputs.su_dir_url }}" ]; then
             download_file "${{ github.event.inputs.su_dir_url }}" "firmware_input/su_files.zip" ".su Files ZIP"
@@ -173,6 +213,8 @@ jobs:
           fi
 
           echo "HAS_AUTOSAR=$HAS_AUTOSAR" >> $GITHUB_OUTPUT
+          echo "HAS_REPL=$HAS_REPL"       >> $GITHUB_OUTPUT
+          echo "HAS_TRACE=$HAS_TRACE"     >> $GITHUB_OUTPUT
           echo "HAS_SU=$HAS_SU"           >> $GITHUB_OUTPUT
 
           # ── Validate ELF is a real ARM ELF ───────────────────────────────
@@ -184,7 +226,7 @@ jobs:
           }
           echo "✅ ELF validation passed."
 
-      # ── 6. Run EmbedSched analysis ────────────────────────────────────────
+      # ── 7. Run EmbedSched analysis ────────────────────────────────────────
       - name: Run EmbedSched Analysis
         run: |
           set -euo pipefail
@@ -202,6 +244,16 @@ jobs:
             CMD_ARGS+=(--su-dir firmware_input/su)
           fi
 
+          # Renode simulation arguments
+          if [ "${{ steps.download.outputs.HAS_REPL }}" = "true" ]; then
+            SIM_MS="${{ github.event.inputs.sim_duration_ms || '2000' }}"
+            echo "  [Renode] Running live simulation with firmware_input/platform.repl (${SIM_MS}ms)..."
+            CMD_ARGS+=(--renode-repl firmware_input/platform.repl --renode-sim-ms "$SIM_MS")
+          elif [ "${{ steps.download.outputs.HAS_TRACE }}" = "true" ]; then
+            echo "  [Renode] Using pre-generated trace firmware_input/renode_trace.txt..."
+            CMD_ARGS+=(--renode-trace firmware_input/renode_trace.txt)
+          fi
+
           if [ "${{ steps.download.outputs.HAS_AUTOSAR }}" = "true" ]; then
             CMD_ARGS+=(--autosar-config firmware_input/schedule.json)
             CMD_ARGS+=(--charts-dir reports/charts)
@@ -213,7 +265,7 @@ jobs:
           echo "=== Running: ${CMD_ARGS[*]} ==="
           "${CMD_ARGS[@]}"
 
-      # ── 7. Publish report to Job Summary ─────────────────────────────────
+      # ── 8. Publish report to Job Summary ─────────────────────────────────
       - name: Publish Report in Job Summary
         if: always()
         run: |
@@ -254,7 +306,7 @@ jobs:
             done
           fi
 
-      # ── 8. Upload full artifact bundle ────────────────────────────────────
+      # ── 9. Upload full artifact bundle ────────────────────────────────────
       - name: Upload Report & Charts
         if: always()
         uses: actions/upload-artifact@v4
