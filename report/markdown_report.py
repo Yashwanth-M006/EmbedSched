@@ -92,6 +92,17 @@ def generate_markdown_report(
 
         if 'confidence_note' in autosar_data:
             md.append(f"> **Confidence Level:**\n> {autosar_data['confidence_note']}\n")
+
+        charts_dir = autosar_data.get('charts_dir')
+        if charts_dir:
+            md.append("### 📊 Visual Schedulability Charts\n")
+            md.append("Generated matplotlib visual artifacts:\n")
+            md.append(f"- **Schedulability Dashboard:** [`schedulability_dashboard.png`]({charts_dir}/schedulability_dashboard.png)")
+            md.append(f"- **Gantt Schedule Timeline:** [`gantt_chart.png`]({charts_dir}/gantt_chart.png)")
+            md.append(f"- **Response Time vs Deadline:** [`response_time_chart.png`]({charts_dir}/response_time_chart.png)")
+            md.append(f"- **Start-Time Jitter Plot:** [`jitter_chart.png`]({charts_dir}/jitter_chart.png)")
+            md.append("\n*(These chart PNG files are packaged in the downloadable run artifacts.)*\n")
+
         md.append("---\n")
 
     # Findings section

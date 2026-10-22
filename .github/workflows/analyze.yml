@@ -87,7 +87,7 @@ jobs:
             MAP=$(find "$TEST_DIR" -maxdepth 1 -name "*.map" | head -n 1)
             LD=$(find "$TEST_DIR" -maxdepth 1 -name "*.ld" | head -n 1)
             CHIP=$(find "$TEST_DIR" -maxdepth 1 -name "*.yaml" -o -name "*.yml" | head -n 1)
-            AUTOSAR=$(find "$TEST_DIR" -maxdepth 1 -name "*autosar*.json" | head -n 1)
+            AUTOSAR=$(find "$TEST_DIR" -maxdepth 1 -name "*autosar*.json" -o -name "schedule.json" -o -name "*.json" | head -n 1)
 
             # Fallback to suite defaults if missing in specific subtest
             if [ -z "$ELF" ]; then ELF=$(find tests/Test_Suite1/Test_1 -name "*.elf" | head -n 1); fi
@@ -95,7 +95,8 @@ jobs:
             if [ -z "$LD" ]; then LD=$(find tests/Test_Suite1/Test_1 -name "*.ld" | head -n 1); fi
             if [ -z "$CHIP" ]; then CHIP=$(find tests/Test_Suite1/Test_1 -name "*.yaml" | head -n 1); fi
 
-            CMD="python main.py --elf $ELF --map $MAP --ld $LD --chip $CHIP --output reports/analysis_report.md"
+            mkdir -p reports/charts
+            CMD="python main.py --elf $ELF --map $MAP --ld $LD --chip $CHIP --output reports/analysis_report.md --charts-dir reports/charts"
             if [ -n "$AUTOSAR" ]; then
               CMD="$CMD --autosar-config $AUTOSAR"
             fi
@@ -103,7 +104,8 @@ jobs:
             echo "Executing: $CMD"
             eval $CMD
           else
-            CMD="python main.py --elf ${{ github.event.inputs.elf_path }} --map ${{ github.event.inputs.map_path }} --ld ${{ github.event.inputs.ld_path }} --chip ${{ github.event.inputs.chip_yaml }} --output reports/analysis_report.md"
+            mkdir -p reports/charts
+            CMD="python main.py --elf ${{ github.event.inputs.elf_path }} --map ${{ github.event.inputs.map_path }} --ld ${{ github.event.inputs.ld_path }} --chip ${{ github.event.inputs.chip_yaml }} --output reports/analysis_report.md --charts-dir reports/charts"
             if [ -n "${{ github.event.inputs.autosar_config }}" ]; then
               CMD="$CMD --autosar-config ${{ github.event.inputs.autosar_config }}"
             fi
@@ -116,6 +118,21 @@ jobs:
         run: |
           if [ -f reports/analysis_report.md ]; then
             cat reports/analysis_report.md >> $GITHUB_STEP_SUMMARY
+
+            # If charts were generated, embed them directly into the summary
+            if [ -d reports/charts ] && [ "$(ls -A reports/charts)" ]; then
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "## 📈 Generated Visual Charts" >> $GITHUB_STEP_SUMMARY
+              for img in reports/charts/*.png; do
+                if [ -f "$img" ]; then
+                  fname=$(basename "$img")
+                  echo "### $fname" >> $GITHUB_STEP_SUMMARY
+                  b64=$(base64 -w 0 "$img" 2>/dev/null || base64 "$img")
+                  echo "<img src=\"data:image/png;base64,$b64\" width=\"750\" />" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                fi
+              done
+            fi
           else
             echo "### ℹ️ Test run completed. Full log available in run console." >> $GITHUB_STEP_SUMMARY
           fi

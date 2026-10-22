@@ -660,7 +660,9 @@ def _run_autosar_analysis(
     main._last_autosar_data = {
         'tasks': task_list_data,
         'confidence_note': conf_note,
-        'verdict': "SCHEDULABLE" if not has_mismatch_error and all(t.schedulable for t in all_tasks) else "UNSCHEDULABLE / MISMATCH"
+        'verdict': "SCHEDULABLE" if not has_mismatch_error and all(t.schedulable for t in all_tasks) else "UNSCHEDULABLE / MISMATCH",
+        'charts_dir': getattr(args, 'charts_dir', None),
+        'has_sim': sim is not None,
     }
 
     return has_mismatch_error, reporter
