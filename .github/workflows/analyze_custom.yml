@@ -216,6 +216,8 @@ jobs:
           echo "HAS_REPL=$HAS_REPL"       >> $GITHUB_OUTPUT
           echo "HAS_TRACE=$HAS_TRACE"     >> $GITHUB_OUTPUT
           echo "HAS_SU=$HAS_SU"           >> $GITHUB_OUTPUT
+          CLEAN_FW_NAME=$(echo "${{ github.event.inputs.firmware_name || 'custom-firmware' }}" | tr '/\\: "<>|*? ' '____________')
+          echo "CLEAN_FW_NAME=$CLEAN_FW_NAME" >> $GITHUB_OUTPUT
 
           # ── Validate ELF is a real ARM ELF ───────────────────────────────
           echo "--- Validating ELF ---"
@@ -311,7 +313,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: embedsched-${{ github.event.inputs.firmware_name }}-report
+          name: embedsched-${{ steps.download.outputs.CLEAN_FW_NAME || 'custom-firmware' }}-report
           path: |
             reports/
           retention-days: 30

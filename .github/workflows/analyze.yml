@@ -126,6 +126,8 @@ jobs:
             TARGET="Test_Suite1/Test_1"
           fi
           echo "TARGET=$TARGET" >> $GITHUB_OUTPUT
+          CLEAN_TARGET=$(echo "$TARGET" | tr '/\\' '__')
+          echo "CLEAN_TARGET=$CLEAN_TARGET" >> $GITHUB_OUTPUT
 
           # ── All suites (CI regression mode) ───────────────────────────────
           if [ "$TARGET" = "run_all_suites" ]; then
@@ -259,6 +261,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: embedsched-report-${{ steps.run_analysis.outputs.TARGET || 'auto' }}
+          name: embedsched-report-${{ steps.run_analysis.outputs.CLEAN_TARGET || 'auto' }}
           path: reports/
           retention-days: 30
