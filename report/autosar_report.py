@@ -146,6 +146,7 @@ def print_autosar_report(
     deadlock_findings: list = None,
     lowest_confidence_tag: str = "[CALCULATED]",
     charts_dir: Optional[str] = None,
+    autosar_priority: bool = False,
 ) -> None:
     """
     Print the full AUTOSAR Schedulability Analysis section to stdout.
@@ -163,6 +164,8 @@ def print_autosar_report(
     """
     print(f"\n{'='*78}")
     print(_bold(" AUTOSAR SCHEDULABILITY ANALYSIS"))
+    prio_conv_desc = "AUTOSAR OS (Higher numerical value = Higher priority)" if autosar_priority else "Standard Real-Time (Lower numerical value = Higher priority)"
+    print(f" Priority Convention: {_cyan(prio_conv_desc)}")
     print(f"{'='*78}")
 
     # ── Deadlock banner (shown prominently before everything else) ──────────
@@ -181,9 +184,10 @@ def print_autosar_report(
     print(hdr_sum)
     print(f"  {sep_sum}")
 
+    prio_sort_key = lambda x: (x.core_id, -x.priority if autosar_priority else x.priority)
     all_pass = True
     any_fail = False
-    for t in sorted(all_tasks_with_isrs, key=lambda x: (x.core_id, -x.priority)):
+    for t in sorted(all_tasks_with_isrs, key=prio_sort_key):
         p_str    = f"{t.period_us:.0f}" if t.period_us > 0 else "async"
         wcet_str = f"{t.wcet_us:.2f}" if t.wcet_us > 0 else "???"
         r_str    = f"{t.wcrt_us:.2f}" if t.wcrt_us > 0 else "n/a"
@@ -227,7 +231,7 @@ def print_autosar_report(
     print(f"  {sep_1}")
     print(hdr_1)
     print(f"  {sep_1}")
-    for t in sorted(all_tasks_with_isrs, key=lambda x: (x.core_id, -x.priority)):
+    for t in sorted(all_tasks_with_isrs, key=prio_sort_key):
         kind = "ISR" if t.is_isr else f"Core {t.core_id}"
         wcet_str = f"{t.wcet_us:.2f}" if t.wcet_us > 0 else "???"
         tag_col = _cyan(f"{t.wcet_tag:<16}")
@@ -243,6 +247,8 @@ def print_autosar_report(
     for core_id, info in sorted(util_info.items()):
         print(f"\n  Core {core_id}  ({info['task_count']} periodic tasks):")
         print(f"    {_util_bar(info['utilization'], info.get('bound', info.get('rm_bound', 1.0)), info)}")
+        if 'u_task' in info and 'u_isr' in info:
+            print(f"    Duty breakdown: Tasks {info['u_task']*100:.1f}% | ISRs {info['u_isr']*100:.1f}% | Idle {info['u_idle']*100:.1f}%")
 
     # Overall verdict — append the propagated confidence tag
     all_schedulable = all(t.schedulable is not False for t in all_tasks_with_isrs)
@@ -273,7 +279,7 @@ def print_autosar_report(
 
     def _task_sort_key(t):
         is_edf = util_info.get(t.core_id, {}).get('algorithm') == 'EDF' or t.priority == 255
-        prio_order = t.deadline_us if is_edf else -t.priority
+        prio_order = t.deadline_us if is_edf else (-t.priority if autosar_priority else t.priority)
         return (t.core_id, prio_order)
 
     for t in sorted(all_tasks_with_isrs, key=_task_sort_key):
@@ -346,13 +352,12 @@ def print_autosar_report(
     print()
     print(
         "  WCET Derivation Method:\n"
-        "    [CALCULATED]  Code-size heuristic: size_bytes / 2.5 bytes_per_insn × 1.15 penalty\n"
-        "                  Source: Thumb-2 ISA encoding statistics + ARMv7-M pipeline model.\n"
-        "                  Treat response times as OPTIMISTIC LOWER BOUNDS.\n"
-        "\n"
-        "    [SIMULATED]   Instruction counts from Renode functional trace.\n"
-        "                  Renode does NOT model cache effects or bus arbitration.\n"
-        "                  Timing is functional only — treat as APPROXIMATE.\n"
+        "    [IPET]              Implicit Path Enumeration Technique (microarchitecturally proven).\n"
+        "                        Models pipeline hazards, branch flushes, and 128-bit Flash prefetch.\n"
+        "    [IPET-ANNOTATED]    IPET with user-annotated loop bound overrides from schedule.json.\n"
+        "    [IPET-CONSERVATIVE] IPET using conservative fallback (--max-loop-bound) for unbounded loops.\n"
+        "    [CALCULATED]        Code-size heuristic (fallback when no disassembly or ELF available).\n"
+        "    [SIMULATED]         Instruction counts from Renode functional trace (approximate).\n"
         "\n"
         "  RTA Assumptions:\n"
         "    - Single-core analysis uses configured scheduling algorithm (RM/DM/EDF).\n"

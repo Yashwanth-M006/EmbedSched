@@ -20,7 +20,8 @@ def generate_charts(
     out_dir: str = ".",
     util_info: dict = None,
     cores: dict = None,
-    lowest_tag: str = "[CALCULATED]"
+    lowest_tag: str = "[CALCULATED]",
+    autosar_priority: bool = False,
 ) -> None:
     os.makedirs(out_dir, exist_ok=True)
     
@@ -30,10 +31,10 @@ def generate_charts(
 
     # Output 2: Gantt Chart
     if sim:
-        _generate_gantt(sim, all_tasks, os.path.join(out_dir, "gantt_chart.png"))
+        _generate_gantt(sim, all_tasks, os.path.join(out_dir, "gantt_chart.png"), autosar_priority=autosar_priority)
 
     # Output 3: Response Time Table / Plot
-    _generate_response_time_chart(all_tasks, os.path.join(out_dir, "response_time_chart.png"), lowest_tag)
+    _generate_response_time_chart(all_tasks, os.path.join(out_dir, "response_time_chart.png"), lowest_tag, autosar_priority=autosar_priority)
 
     # Output 4: Jitter Plot
     if sim:
@@ -120,14 +121,16 @@ def _generate_schedulability_dashboard(
 def _generate_response_time_chart(
     all_tasks: List[AutosarTask],
     filepath: str,
-    lowest_tag: str = "[CALCULATED]"
+    lowest_tag: str = "[CALCULATED]",
+    autosar_priority: bool = False,
 ) -> None:
     periodic = [t for t in all_tasks if t.period_us > 0 and t.wcet_us > 0]
     if not periodic:
         return
 
     def _sort_key(t):
-        return (t.core_id, t.deadline_us)
+        prio_term = -t.priority if autosar_priority else t.priority
+        return (t.core_id, prio_term)
     sorted_tasks = sorted(periodic, key=_sort_key, reverse=True)
 
     fig, ax = plt.subplots(figsize=(11, max(4.0, 1.2 * len(sorted_tasks))))
@@ -208,7 +211,12 @@ def _generate_response_time_chart(
 
 
 
-def _generate_gantt(sim: SimulationResult, all_tasks: List[AutosarTask], filepath: str) -> None:
+def _generate_gantt(
+    sim: SimulationResult,
+    all_tasks: List[AutosarTask],
+    filepath: str,
+    autosar_priority: bool = False,
+) -> None:
     # ── Curated Distinct Task Palette ───────────────────────────────────────
     TASK_PALETTE = [
         '#2980b9',  # rich blue
@@ -274,7 +282,7 @@ def _generate_gantt(sim: SimulationResult, all_tasks: List[AutosarTask], filepat
                 y_labels_full.append(f"--- Core {core_id} ---")
                 current_y += 10
 
-            c_tasks = sorted(cores[core_id], key=lambda t: t.deadline_us if (t.priority is None or t.priority == 255) else -t.priority)
+            c_tasks = sorted(cores[core_id], key=lambda t: t.deadline_us if (t.priority is None or t.priority == 255) else (-t.priority if autosar_priority else t.priority))
             for t in c_tasks:
                 y_ticks_full.append(current_y)
                 y_labels_full.append(t.name)
@@ -357,7 +365,7 @@ def _generate_gantt(sim: SimulationResult, all_tasks: List[AutosarTask], filepat
     hp_ms = int(round(sim.hyperperiod_us / 1000.0))
 
     for idx, (core_id, ax_z) in enumerate(core_zoom_axes.items()):
-        c_tasks = sorted(cores[core_id], key=lambda t: t.deadline_us if (t.priority is None or t.priority == 255) else -t.priority)
+        c_tasks = sorted(cores[core_id], key=lambda t: t.deadline_us if (t.priority is None or t.priority == 255) else (-t.priority if autosar_priority else t.priority))
         y_ticks_core = []
         y_labels_core = []
         task_y_core = {}
@@ -451,7 +459,7 @@ def _generate_jitter(sim: SimulationResult, all_tasks: List[AutosarTask], filepa
         jitters = []
         for i, actual_start in enumerate(start_times):
             ideal_start = i * task.period_us
-            jitter = min(abs(actual_start - ideal_start), task.period_us)
+            jitter = max(0.0, actual_start - ideal_start)
             jitters.append(jitter)
             
         x_vals = list(range(len(jitters)))

@@ -1,6 +1,7 @@
 
 [AUTOSAR] Loading task configuration...
-[AUTOSAR] Extracting WCETs from firmware artifacts...
+[AUTOSAR] Extracting WCETs from firmware artifacts via IPET...
+[AUTOSAR] Priority ordering mode: Standard (lower number = higher priority)
 [AUTOSAR] Running Response Time Analysis (RTA)...
 [AUTOSAR] Running discrete-event scheduler simulation...
 [AUTOSAR] Generating matplotlib charts in charts...
@@ -16,34 +17,60 @@
  FIRMWARE EFFICIENCY REPORT
 ====================================================
 
-OVERALL SCORE: 60 / 100
-  Deductions: explicit_stack_found (-0), autosar_deadline_miss (-30), autosar_rm_suboptimal (-10)
+OVERALL SCORE: 0 / 100
+  Deductions: explicit_stack_found (-0), autosar_deadline_miss (-30), autosar_deadline_miss (-30), autosar_cpu_overload (-25), autosar_wcet_dominates (-10), autosar_rm_suboptimal (-10)
 
 --------------------------------------------------
-FINDINGS (3 total: 1 critical, 0 warnings, 2 info)
+FINDINGS (6 total: 3 critical, 1 warnings, 2 info)
 --------------------------------------------------
 
-┌──────────────────────────────────────────────────────────────────────────┐
-│ CRITICAL FINDINGS (1) - ACTION REQUIRED                                  │
-└──────────────────────────────────────────────────────────────────────────┘
++--------------------------------------------------------------------------+
+| CRITICAL FINDINGS (3) - ACTION REQUIRED                                  |
++--------------------------------------------------------------------------+
 
-  [CRITICAL] [RTA/[CALCULATED]] autosar_deadline_miss
+  [CRITICAL] [RTA/[IPET]] autosar_deadline_miss
     Task 'Task_B' MISSES its deadline.
       Function mapped  : task_b
-      WCET             : 3200.00 µs  [CALCULATED]
+      WCET             : 5652.00 µs  [IPET]
       Deadline         : 6000 µs
-      Worst-case resp. : 6200.00 µs
-      Overrun          : +200.00 µs
+      Worst-case resp. : 10951.00 µs
+      Overrun          : +4951.00 µs
       Call chain       : task_b
-      NOTE: WCET is [CALCULATED] — treat response time as optimistic lower bound.
+      NOTE: WCET is [IPET] — treat response time as functional estimate.
     Fix: Raise priority, shorten period, reduce WCET by moving hot functions to ITCM, or offload work to a lower-priority task.
 
-┌──────────────────────────────────────────────────────────────────────────┐
-│ WARNING FINDINGS (0) - None Detected                                     │
-└──────────────────────────────────────────────────────────────────────────┘
-┌──────────────────────────────────────────────────────────────────────────┐
-│ INFORMATIONAL FINDINGS (2)                                               │
-└──────────────────────────────────────────────────────────────────────────┘
+  [CRITICAL] [RTA/[IPET]] autosar_deadline_miss
+    Task 'Task_C' MISSES its deadline.
+      Function mapped  : task_c
+      WCET             : 7065.00 µs  [IPET]
+      Deadline         : 20000 µs
+      Worst-case resp. : 28967.00 µs
+      Overrun          : +8967.00 µs
+      Call chain       : task_c
+      NOTE: WCET is [IPET] — treat response time as functional estimate.
+    Fix: Raise priority, shorten period, reduce WCET by moving hot functions to ITCM, or offload work to a lower-priority task.
+
+  [CRITICAL] [CALCULATED] autosar_cpu_overload
+    Core 0: CPU OVERLOADED.
+      Utilization : 126.0% > 100%
+      Tasks       : 3
+      System cannot be schedulable under any priority assignment.
+    Fix: Reduce WCET of dominant tasks, increase task periods, or offload tasks to another core.
+
++--------------------------------------------------------------------------+
+| WARNING FINDINGS (1) - REVIEW RECOMMENDED                                |
++--------------------------------------------------------------------------+
+
+  [WARNING] [IPET] autosar_wcet_dominates
+    Task 'Task_A': WCET dominates its period.
+      WCET / Period = 5299.00 / 10000 µs = 53%
+      Leaves only 47% of the period for other tasks.
+      Function: task_a  [IPET]
+    Fix: Split task body into pre-emption points, move expensive computation to a lower-priority helper task, or increase the period.
+
++--------------------------------------------------------------------------+
+| INFORMATIONAL FINDINGS (2)                                               |
++--------------------------------------------------------------------------+
 
   [INFO] [STATIC] explicit_stack_found
     Explicit stack reservation found.
@@ -59,42 +86,44 @@ FINDINGS (3 total: 1 critical, 0 warnings, 2 info)
 
 ==============================================================================
  AUTOSAR SCHEDULABILITY ANALYSIS
+ Priority Convention: Standard Real-Time (Lower numerical value = Higher priority)
 ==============================================================================
 
 EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
   ────────────────────────────────────────────────────────────────────────────────────
   Task                    Period µs   WCET µs      R µs      D µs   Margin µs  Verdict
   ────────────────────────────────────────────────────────────────────────────────────
-  Task_C                      20000   4000.00  13200.00     20000     6800.00     PASS
-  Task_B                      15000   3200.00   6200.00      6000     -200.00     MISS
-  Task_A                      10000   3000.00   3000.00     10000     7000.00     PASS
+  Task_A                      10000   5299.00   5299.00     10000     4701.00     PASS
+  Task_B                      15000   5652.00  10951.00      6000    -4951.00     MISS
+  Task_C                      20000   7065.00  28967.00     20000    -8967.00     MISS
   ────────────────────────────────────────────────────────────────────────────────────
-  Overall: FAIL [CALCULATED] — deadline miss detected
+  Overall: FAIL [IPET] — deadline miss detected
 
 
 1. TASK → FUNCTION MAPPING
   ──────────────────────────────────────────────────────────────────────────────────────
   AUTOSAR Task             Entry Function             WCET (µs)    Source           Core
   ──────────────────────────────────────────────────────────────────────────────────────
-  Task_C                   task_c                     4000.00      [CALCULATED]     [Core 0]
-  Task_B                   task_b                     3200.00      [CALCULATED]     [Core 0]
-  Task_A                   task_a                     3000.00      [CALCULATED]     [Core 0]
+  Task_A                   task_a                     5299.00      [IPET]           [Core 0]
+  Task_B                   task_b                     5652.00      [IPET]           [Core 0]
+  Task_C                   task_c                     7065.00      [IPET]           [Core 0]
   ──────────────────────────────────────────────────────────────────────────────────────
 
 2. SCHEDULABILITY DASHBOARD
 
   Core 0  (3 periodic tasks):
-    [████████████████████████████░░░|░░░░░░░░░]  71.3%  RM bound: 78.0%  →  GUARANTEED (below RM bound)
+    [███████████████████████████████|█████████]  126.0%  RM bound: 78.0%  →  OVERLOADED
+    Duty breakdown: Tasks 126.0% | ISRs 0.0% | Idle 0.0%
 
-  ● VERDICT: NOT SCHEDULABLE  — deadline miss(es) detected by RTA.  [CALCULATED]
+  ● VERDICT: NOT SCHEDULABLE  — deadline miss(es) detected by RTA.  [IPET]
 
 3. RESPONSE TIME ANALYSIS TABLE
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
   Task                    Core  Prio  Period µs   WCET µs  Blk µs       Source   WCRT µs  Deadline µs  Margin µs
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  Task_C                     0     3      20000   4000.00    0.00   CALCULATED  13200.00        20000    6800.00
-  Task_B                     0     2      15000   3200.00    0.00   CALCULATED   6200.00         6000    -200.00
-  Task_A                     0     1      10000   3000.00    0.00   CALCULATED   3000.00        10000    7000.00
+  Task_A                     0     1      10000   5299.00    0.00         IPET   5299.00        10000    4701.00
+  Task_B                     0     2      15000   5652.00    0.00         IPET  10951.00         6000   -4951.00
+  Task_C                     0     3      20000   7065.00    0.00         IPET  28967.00        20000   -8967.00
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 4. SIMULATED EXECUTION TIMELINE (Gantt Chart)
@@ -102,9 +131,9 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
 
   CORE 0  |  Hyperperiod: 60000 µs  (scale: 937.5 µs/char)
   ────────────────────────────────────────────────────────────────────────────────────────
-  Task_A           [A] ████░░░░░░████░░░░░░░████░░░░░░░████░░░░░░████░░░░░░░████░░░░░░░
-  Task_B           [B] ░░░███[91m|[0m░░░░░░░░░[91m█[0m[91m█[0m[91m█[0m[91m█[0m░░░░░░░░░░░░░░░[91m█[0m[91m█[0m[91m█[0m[91m|[0m░░░░░░░░░[91m█[0m[91m█[0m[91m█[0m[91m█[0m░░░░░░░░░░░░
-  Task_C           [C] ░░░░░░█████>░██░░░░░░░░░█████░░░░░░░░░░░░░░░░███>░░███>░█░░░░░░░
+  Task_A           [A] ██████░░░░███████░░░░██████░░░░░██████░░░░███████░░░░██████░░░░░
+  Task_B           [B] ░░░░░█[91m|[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m>[0m░░░░[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m|[0m░░░[91m█[0m[91m█[0m[91m█[0m[91m█[0m░░░░░░░[91m█[0m[91m|[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m>[0m░░░░[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m|[0m░░░[91m█[0m[91m█[0m[91m█[0m[91m█[0m░░
+  Task_C           [C] ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░███>░░░░░░░░░░░░░░░░░░░░░░░░░░░░███
                          0         10000      20000      30000     40000      50000      
 
   Legend:  █ = executing   ░ = idle   > = preemption point
@@ -114,9 +143,11 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
     [B]  Task_B
     [C]  Task_C
 
-  DEADLINE MISSES (2 events):
-    [MISS]  Task_B               released @ 0 µs,  deadline @ 6000 µs,  finished @ 6200.00 µs  (+200.00 µs late)
-    [MISS]  Task_B               released @ 30000 µs,  deadline @ 36000 µs,  finished @ 36200.00 µs  (+200.00 µs late)
+  DEADLINE MISSES (4 events):
+    [MISS]  Task_B               released @ 0 µs,  deadline @ 6000 µs,  finished @ 16250.00 µs  (+10250.00 µs late)
+    [MISS]  Task_B               released @ 15000 µs,  deadline @ 21000 µs,  finished @ 27201.00 µs  (+6201.00 µs late)
+    [MISS]  Task_B               released @ 30000 µs,  deadline @ 36000 µs,  finished @ 46250.00 µs  (+10250.00 µs late)
+    [MISS]  Task_B               released @ 45000 µs,  deadline @ 51000 µs,  finished @ 57201.00 µs  (+6201.00 µs late)
 
 5. JITTER ANALYSIS
 
@@ -125,9 +156,9 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
   ────────────────────────────────────────────────────────────────────────────
   Task                    Activations  Max Jitter µs  Mean Jitter µs Assessment
   ────────────────────────────────────────────────────────────────────────────
-  Task_A                            6           0.00            0.00  EXCELLENT  (<1% of period)
-  Task_B                            4        3000.00         1500.00  HIGH       (>20% of period — review priority assignment)
-  Task_C                            3        6200.00         4066.67  HIGH       (>20% of period — review priority assignment)
+  Task_A                            6           0.00            0.00  EXCELLENT (<1% of period)
+  Task_B                            4        5299.00         3274.50  HIGH (>20% of period
+  Task_C                            1       27201.00        27201.00  HIGH (>20% of period
   ────────────────────────────────────────────────────────────────────────────
   NOTE: Jitter is measured against the ideal periodic release time.
   Non-zero jitter is caused by higher-priority task preemption.
@@ -146,18 +177,17 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
 
 7. CONFIDENCE NOTES
 
-  All WCETs are [CALCULATED] from code-size heuristic.
-  Response times are OPTIMISTIC LOWER BOUNDS — not measured values.
-  The analysis is conservative for schedulability (real silicon may be slower).
+  HIGH CONFIDENCE: [IPET]
+  All WCETs mathematically proven via Implicit Path Enumeration Technique (IPET).
+  Pipeline stalls, taken branch flushes, and Flash prefetch buffer misses fully modeled.
 
   WCET Derivation Method:
-    [CALCULATED]  Code-size heuristic: size_bytes / 2.5 bytes_per_insn × 1.15 penalty
-                  Source: Thumb-2 ISA encoding statistics + ARMv7-M pipeline model.
-                  Treat response times as OPTIMISTIC LOWER BOUNDS.
-
-    [SIMULATED]   Instruction counts from Renode functional trace.
-                  Renode does NOT model cache effects or bus arbitration.
-                  Timing is functional only — treat as APPROXIMATE.
+    [IPET]              Implicit Path Enumeration Technique (microarchitecturally proven).
+                        Models pipeline hazards, branch flushes, and 128-bit Flash prefetch.
+    [IPET-ANNOTATED]    IPET with user-annotated loop bound overrides from schedule.json.
+    [IPET-CONSERVATIVE] IPET using conservative fallback (--max-loop-bound) for unbounded loops.
+    [CALCULATED]        Code-size heuristic (fallback when no disassembly or ELF available).
+    [SIMULATED]         Instruction counts from Renode functional trace (approximate).
 
   RTA Assumptions:
     - Single-core analysis uses configured scheduling algorithm (RM/DM/EDF).

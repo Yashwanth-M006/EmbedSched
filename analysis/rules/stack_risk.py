@@ -57,3 +57,48 @@ def check_stack_risk(
             ))
             
     return findings
+
+
+def check_indirect_calls(
+    indirect_calls: dict,
+) -> List[Finding]:
+    """
+    Evaluates unresolved indirect callsites (e.g. blx r3) across the firmware.
+    Provides diagnostic guidance on compiling with Whole-Program LTO
+    (-flto -fwhole-program -fdevirtualize) to devirtualize static callback tables
+    into direct calls visible to static call-graph and stack-depth analysis.
+    """
+    findings = []
+    if not indirect_calls:
+        return findings
+
+    total_sites = sum(len(sites) for sites in indirect_calls.values())
+    func_samples = []
+    for func, sites in list(indirect_calls.items())[:5]:
+        sample_str = ", ".join(f"0x{addr:08x}: {mnem} {reg}" for addr, mnem, reg in sites[:2])
+        if len(sites) > 2:
+            sample_str += f" (+{len(sites)-2} more)"
+        func_samples.append(f"    - {func}(): {sample_str}")
+
+    sample_block = "\n".join(func_samples)
+    more_funcs = f"\n    ... and {len(indirect_calls) - 5} more functions" if len(indirect_calls) > 5 else ""
+
+    findings.append(Finding(
+        rule="indirect_calls_devirtualization_advisory",
+        severity="INFO",
+        tag="[STATIC]",
+        message=(
+            f"Detected {total_sites} unresolved indirect callsite(s) across {len(indirect_calls)} function(s):\n"
+            f"{sample_block}{more_funcs}\n"
+            f"  Indirect branches via register (e.g. 'blx Rn') obscure runtime call targets from static disassembly.\n"
+            f"  If these callbacks initiate deep call trees or recursive cycles, stack depth bounds may be optimistic.\n"
+            f"  Devirtualization Recommendation:\n"
+            f"    Compile with Whole-Program Link-Time Optimization (LTO):\n"
+            f"      -flto -fwhole-program -fdevirtualize\n"
+            f"    GCC/Clang interprocedural constant propagation (IPA-CP) will devirtualize monomorphic callback tables\n"
+            f"    into direct 'bl' calls, rendering them fully visible to static call-graph and stack-depth derivation."
+        ),
+        fix="Compile with '-flto -fwhole-program -fdevirtualize' to promote indirect calls to direct branches, and annotate remaining dynamic dispatch tables."
+    ))
+
+    return findings

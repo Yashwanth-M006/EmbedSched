@@ -1,15 +1,11 @@
 # EmbedSched
 
-> **A post-compile schedulability analyzer for ARM Cortex-M firmware.**  
-> Derives per-task WCET from build artifacts, runs Response Time Analysis, and produces confidence-tagged timing reports — without requiring hardware.
+> **Post-compile schedulability and memory-safety analyzer for ARM Cortex-M firmware.**
+> Derives per-task WCET from build artifacts, performs multi-core Response Time Analysis, and produces confidence-tagged timing reports — without requiring hardware.
 
----
-
-## Why This Exists
-
-Commercial schedulability tools (TA Tool Suite, SymTA/S, aiT) cost tens of thousands of euros and require hardware availability. Engineers typically run timing analysis only after hardware arrives — weeks before tape-out, when fixes are expensive.
-
-**EmbedSched** runs on your build artifacts the moment the compiler finishes. No hardware. No license. It catches deadline misses, stack overflow under preemption, ISR placement penalties, and multicore deadlock risks in your CI pipeline before silicon is available.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.9%2B-blue)](https://www.python.org/)
+[![Platform](https://img.shields.io/badge/Platform-ARM%20Cortex--M-green)](https://developer.arm.com/)
 
 ---
 
@@ -27,9 +23,13 @@ Commercial schedulability tools (TA Tool Suite, SymTA/S, aiT) cost tens of thous
 - [Quick Start](#quick-start)
 - [CLI Reference](#cli-reference)
 - [Required Inputs](#required-inputs)
-  - [Firmware Build Artifacts](#firmware-build-artifacts)
+  - [firmware.elf](#firmwareelf)
+  - [firmware.map](#firmwaremap)
+  - [.su Files (Stack Usage)](#su-files-stack-usage)
+  - [startup_\*.s (Vector Table)](#startups-vector-table)
+  - [Linker Script (.ld)](#linker-script-ld)
   - [Chip Profile YAML](#chip-profile-yaml)
-  - [AUTOSAR Schedule Configuration (`schedule.json`)](#autosar-schedule-configuration-schedulejson)
+  - [AUTOSAR Schedule Configuration](#autosar-schedule-configuration-schedulejson)
   - [Optional: Renode Trace](#optional-renode-trace)
 - [Project Structure](#project-structure)
 - [SDK Reference](#sdk-reference)
@@ -38,16 +38,16 @@ Commercial schedulability tools (TA Tool Suite, SymTA/S, aiT) cost tens of thous
   - [Analysis Engine](#analysis-engine)
   - [Rule Engine](#rule-engine)
   - [Simulation Layer](#simulation-layer)
-  - [Reporting & Visualization](#reporting--visualization)
-- [AUTOSAR Schedulability & Timing Extension](#autosar-schedulability--timing-extension)
+  - [Reporting & Visualization](#reporting-visualization)
+- [AUTOSAR Schedulability & Timing Extension](#autosar-schedulability-timing-extension)
   - [Response Time Analysis (RTA) Engine](#response-time-analysis-rta-engine)
-  - [Multi-Core Scheduling & Deadlock Analysis](#multi-core-scheduling--deadlock-analysis)
+  - [Multi-Core Scheduling & Deadlock Analysis](#multi-core-scheduling-deadlock-analysis)
   - [Hardware-Aware ISR Integration](#hardware-aware-isr-integration)
-  - [Discrete-Event Scheduler Simulation & Jitter Analysis](#discrete-event-scheduler-simulation--jitter-analysis)
-  - [Visual Artifacts & Matplotlib Charts](#visual-artifacts--matplotlib-charts)
+  - [Discrete-Event Scheduler Simulation & Jitter Analysis](#discrete-event-scheduler-simulation-jitter-analysis)
+  - [Visual Artifacts & Matplotlib Charts](#visual-artifacts-matplotlib-charts)
 - [Rule Engine Deep Dive](#rule-engine-deep-dive)
-  - [Hardware Architecture Rules (Rules 1–9)](#rule-1--isr-placement)
-  - [AUTOSAR Timing & Schedulability Rules (Rules 10–16)](#autosar-timing--schedulability-rules)
+  - [Hardware & Memory Architecture Rules (Rules 1–9)](#hardware-memory-architecture-rules-rules-19)
+  - [AUTOSAR Timing & Schedulability Rules (Rules 10–16)](#autosar-timing-schedulability-rules-rules-1016)
 - [Chip Profiles](#chip-profiles)
   - [Supported Chips](#supported-chips)
   - [YAML Schema](#yaml-schema)
@@ -56,18 +56,27 @@ Commercial schedulability tools (TA Tool Suite, SymTA/S, aiT) cost tens of thous
 - [Sample Output](#sample-output)
 - [Renode Integration](#renode-integration)
 - [Limitations](#limitations)
-  - [What This Tool Is Not](#what-this-tool-is-not)
-  - [Technical Limitations Matrix](#technical-limitations-matrix)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
+## Why This Exists
+
+Commercial schedulability tools (TA Tool Suite, SymTA/S, aiT) cost tens of thousands of euros and require hardware availability. Engineers typically run timing analysis only after hardware arrives — weeks before tape-out, when fixes are expensive.
+
+**EmbedSched** runs on your build artifacts the moment the compiler finishes. No hardware. No license fees. It catches deadline misses, stack overflow under preemption, ISR placement penalties, and multicore deadlock risks in your CI pipeline before silicon is available.
 
 ---
 
 ## Overview
 
-Most embedded engineers discover firmware efficiency problems only when something fails in the field — an ISR misses its deadline, a DMA transfer corrupts memory, or a stack overflow silently corrupts state. These issues are detectable **before runtime** by reading the build artifacts with the right knowledge.
+Most embedded engineers discover firmware efficiency problems only when something fails in the field — an ISR misses its deadline, a DMA transfer corrupts memory, or a stack overflow silently corrupts global state. These issues are detectable **before runtime** by reading the build artifacts with the right knowledge.
 
 **EmbedSched** encodes the same checks a senior embedded engineer applies by eye (reading `.map` files, auditing linker scripts, reviewing section placement) into an automated pipeline that runs on any ARM Cortex-M firmware workspace.
 
 **What it answers:**
+
 - Is this firmware using the hardware correctly?
 - Are ISR handlers placed in zero-wait-state memory?
 - Are DMA buffers aligned for D-cache safety?
@@ -118,14 +127,14 @@ Tested against 12 adversarial test cases covering RM boundary conditions, deadli
 | Test Case | Purpose | Result |
 |---|---|---|
 | **TC1 — Baseline** | End-to-end pipeline verification | ✓ Pass |
-| **TC2 — RM boundary** | Utilization > Liu & Layland bound, exact RTA passes | ✓ Pass |
+| **TC2 — RM boundary** | Utilization > Liu & Layland bound; exact RTA still passes | ✓ Pass |
 | **TC3 — Deadline miss** | Misses deadline despite passing utilization test | ✓ Detected |
 | **TC4 — PCP blocking** | Priority inversion strictly bounded to one critical section | ✓ Pass |
 | **TC5 — Multicore EDF** | Dynamic EDF on Core 0, fixed-priority RM on Core 1 | ✓ Pass |
 | **TC6 — ISR interference** | Hardware ISR auto-detected and injected into RTA | ✓ Detected |
-| **TC7 — Concurrent stack** | 4,128B > 4,096B under full preemption call depth | ✓ Detected |
+| **TC7 — Concurrent stack** | 4,128 B > 4,096 B under full preemption call depth | ✓ Detected |
 | **TC8 — EDF demand bound** | Constrained deadline ($D < T$), Processor Demand Analysis | ✓ Pass |
-| **TC9 — Hyperperiod explosion** | LCM = 323,323 ms, simulation capped safely at 200 ms | ✓ Handled |
+| **TC9 — Hyperperiod explosion** | LCM = 323,323 ms; simulation capped safely at 200 ms | ✓ Handled |
 | **TC10 — Deadlock** | Circular mutex acquisition order across cores (AB/BA) | ✓ Detected |
 | **TC11 — Confidence propagation** | `[HEURISTIC]` WCET tags propagate to verdict banner | ✓ Pass |
 | **TC12 — Symbol mismatch** | Entry function typo triggers Levenshtein suggestion | ✓ Pass |
@@ -139,7 +148,7 @@ EmbedSched generates vector-quality Matplotlib figures for design reviews, safet
 ### Schedulability Dashboard
 ![Schedulability Dashboard](docs/example_dashboard.png)
 
-### Response Time vs Deadline
+### Response Time vs. Deadline
 ![Response Time Chart](docs/example_rta.png)
 
 ### Execution Timeline (Gantt Chart)
@@ -149,7 +158,7 @@ EmbedSched generates vector-quality Matplotlib figures for design reviews, safet
 
 ## CI/CD Pipeline Integration
 
-EmbedSched runs non-interactively in standard CI/CD pipelines (GitHub Actions, GitLab CI, Jenkins). It exits with code 1 if any `CRITICAL` findings (e.g. deadline misses, stack overflow under preemption, deadlocks) are detected, preventing broken firmware from merging:
+EmbedSched runs non-interactively in standard CI/CD pipelines (GitHub Actions, GitLab CI, Jenkins). It exits with code `1` if any `CRITICAL` findings (deadline misses, stack overflow under preemption, deadlocks) are detected, blocking broken firmware from merging.
 
 ```yaml
 # .github/workflows/firmware-check.yml
@@ -168,21 +177,21 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: pip install -r requirements.txt
 
       - name: Run EmbedSched
         run: |
           python main.py \
-            --elf build/firmware.elf \
-            --map build/firmware.map \
-            --ld  src/linker.ld \
+            --elf  build/firmware.elf \
+            --map  build/firmware.map \
+            --ld   src/linker.ld \
             --chip chips/stm32f407.yaml \
             --autosar-config schedule.json \
             --charts-dir artifacts/charts/
         # Non-zero exit code on CRITICAL findings blocks merge
 
-      - name: Upload Timing Charts
+      - name: Upload timing charts
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -199,9 +208,9 @@ Every finding carries an explicit confidence tag so the tool never overclaims:
 | Tag | Meaning |
 |---|---|
 | `[STATIC]` | Ground truth from `.map`/`.elf` parsing. No estimation involved. |
-| `[CALCULATED]` | Derived from datasheet arithmetic + ARMv7-M Architecture Reference Manual. Sourced and citable. |
-| `[SIMULATED]` | From Renode functional execution trace. Accurate call counts, approximate timing. |
-| `[HEURISTIC]` | Pattern match on symbol or section names. No timing claim made. |
+| `[CALCULATED]` | Derived from datasheet arithmetic and the ARMv7-M Architecture Reference Manual. Sourced and citable. |
+| `[SIMULATED]` | From Renode functional execution trace. Accurate call counts; timing is an approximation (no cache or pipeline modeling). |
+| `[HEURISTIC]` | Pattern match on symbol or section names. No formal timing claim made. |
 
 ---
 
@@ -209,21 +218,21 @@ Every finding carries an explicit confidence tag so the tool never overclaims:
 
 | Dependency | Purpose | Required |
 |---|---|---|
-| Python 3.9+ | Runtime | Yes |
-| `arm-none-eabi-objdump` | ELF disassembly for call graph | Yes |
-| `pyyaml` | Chip profile YAML parsing | Yes |
-| `matplotlib` | High-resolution schedulability dashboards, Gantt, and jitter charts | Recommended (Optional) |
-| `pyelftools` | ELF fallback parsing | Optional |
-| `capstone` | Disassembly fallback | Optional |
-| Renode | Live hardware simulation | Optional |
+| Python 3.9+ | Runtime | ✅ |
+| `arm-none-eabi-objdump` | ELF disassembly for call graph extraction | ✅ |
+| `pyyaml` | Chip profile YAML parsing | ✅ |
+| `matplotlib` | Schedulability dashboards, Gantt charts, and jitter plots | Recommended |
+| `pyelftools` | ELF fallback parsing (when objdump is unavailable) | Optional |
+| `capstone` | Disassembly fallback engine | Optional |
+| Renode | Live hardware simulation for `[SIMULATED]` WCET | Optional |
 
 Install Python dependencies:
 
 ```bash
-pip install pyyaml matplotlib pyelftools capstone
+pip install -r requirements.txt
 ```
 
-Ensure `arm-none-eabi-objdump` is on your `PATH` (part of the [GNU Arm Embedded Toolchain](https://developer.arm.com/downloads/-/gnu-rm)).
+Ensure `arm-none-eabi-objdump` is on your `PATH`. It is part of the [GNU Arm Embedded Toolchain](https://developer.arm.com/downloads/-/gnu-rm).
 
 ---
 
@@ -232,37 +241,39 @@ Ensure `arm-none-eabi-objdump` is on your `PATH` (part of the [GNU Arm Embedded 
 ```bash
 git clone https://github.com/your-org/firmware-analyzer.git
 cd firmware-analyzer
-pip install pyyaml
+pip install -r requirements.txt
 ```
 
-No build step required — the tool runs directly as a Python script.
+No build step is required. The tool runs directly as a Python script.
 
 ---
 
 ## Quick Start
 
-```bash
-python main.py \
-  --elf    path/to/firmware.elf \
-  --map    path/to/firmware.map \
-  --ld     path/to/linker.ld \
-  --chip   chips/stm32f746.yaml \
-  --su-dir path/to/build/ \
-  --startup path/to/startup_stm32f746xx.s \
-  --freq-mhz 216
-```
-
-**Minimal run** (no stack analysis, no ISR detection):
+**Minimal run** (memory layout and ISR placement checks only):
 
 ```bash
 python main.py \
-  --elf firmware.elf \
-  --map firmware.map \
-  --ld  linker.ld \
+  --elf  firmware.elf \
+  --map  firmware.map \
+  --ld   linker.ld \
   --chip chips/stm32f407.yaml
 ```
 
-**With AUTOSAR OS Schedulability Analysis and Visual Charts:**
+**Full static analysis** (with stack analysis and ISR detection):
+
+```bash
+python main.py \
+  --elf     firmware.elf \
+  --map     firmware.map \
+  --ld      linker.ld \
+  --chip    chips/stm32f746.yaml \
+  --su-dir  build/ \
+  --startup startup_stm32f746xx.s \
+  --freq-mhz 216
+```
+
+**With AUTOSAR schedulability analysis and visual charts:**
 
 ```bash
 python main.py \
@@ -279,11 +290,11 @@ python main.py \
 
 ```bash
 python main.py \
-  --elf firmware.elf \
-  --map firmware.map \
-  --ld  linker.ld \
-  --chip chips/stm32f746.yaml \
-  --renode-repl platform/stm32f746.repl \
+  --elf          firmware.elf \
+  --map          firmware.map \
+  --ld           linker.ld \
+  --chip         chips/stm32f746.yaml \
+  --renode-repl  platform/stm32f746.repl \
   --renode-sim-ms 2000
 ```
 
@@ -291,10 +302,10 @@ python main.py \
 
 ```bash
 python main.py \
-  --elf firmware.elf \
-  --map firmware.map \
-  --ld  linker.ld \
-  --chip chips/stm32f746.yaml \
+  --elf          firmware.elf \
+  --map          firmware.map \
+  --ld           linker.ld \
+  --chip         chips/stm32f746.yaml \
   --renode-trace exec_trace.txt
 ```
 
@@ -309,72 +320,64 @@ python main.py \
 | `--ld` | path | ✅ | Path to the linker script (`.ld`) |
 | `--chip` | path | ✅ | Path to chip profile YAML (e.g. `chips/stm32f746.yaml`) |
 | `--autosar-config` | path | — | Path to AUTOSAR task & core schedule JSON (`schedule.json`) |
-| `--charts-dir` | path | — | Directory to output visual Matplotlib charts (Outputs 1–4) |
-| `--stochastic-sim` | flag | — | Enable stochastic execution time variation (85%–100% WCET) in scheduler simulation |
-| `--no-autosar-sim` | flag | — | Disable discrete-event scheduler simulation (run analytical RTA only) |
-| `--su-dir` | path | — | Directory containing `.su` files (enables stack analysis) |
-| `--startup` | path | — | Path to startup assembly file (enables ISR detection) |
-| `--freq-mhz` | float | — | MCU frequency in MHz (defaults to chip profile max) |
+| `--charts-dir` | path | — | Directory to output Matplotlib charts |
+| `--stochastic-sim` | flag | — | Enable stochastic execution-time variation (85–100% WCET) in scheduler simulation |
+| `--no-autosar-sim` | flag | — | Disable discrete-event scheduler simulation; run analytical RTA only |
+| `--su-dir` | path | — | Directory containing `.su` files (enables worst-case stack analysis) |
+| `--startup` | path | — | Path to startup assembly file (enables ISR handler detection) |
+| `--freq-mhz` | float | — | MCU frequency in MHz (defaults to chip profile maximum) |
 | `--renode-trace` | path | — | Path to a pre-captured Renode trace file |
 | `--renode-repl` | path | — | Path to Renode `.repl` platform description (triggers live simulation) |
-| `--renode-sim-ms` | int | — | Duration to run Renode simulation, default: `2000` ms |
+| `--renode-sim-ms` | int | — | Duration to run Renode simulation in milliseconds (default: `2000`) |
 | `--hot-funcs` | string | — | Comma-separated list of performance-critical functions for Flash cache locality audit |
 
 ---
 
 ## Required Inputs
 
-### Firmware Build Artifacts
+### `firmware.elf`
 
-These come from your normal firmware build process.
+The linked ELF binary. Provides symbol addresses, sizes, section membership, and debug information.
 
-#### `firmware.elf`
-
-The linked ELF binary. Provides symbol addresses, sizes, section membership, and debug info.
-
-**How to produce:**
 ```bash
 arm-none-eabi-gcc ... -o firmware.elf
 ```
 
-#### `firmware.map`
+### `firmware.map`
 
 The linker map file. Contains every symbol's final address, size, and source object file.
 
-**How to produce:**  
-Add `-Wl,-Map=firmware.map` to your linker flags.
+Add `-Wl,-Map=firmware.map` to your linker flags. The parser processes entries in the following format:
 
-The parser extracts symbols in this format:
 ```
  .text.adc_dma_isr       0x0000000c   0x48   build/adc.o
  .text.main_loop         0x08004120   0x340  build/main.o
  .dma_bufs.spi_rx_buf    0x20010000   0x400  build/spi.o
 ```
 
-It also extracts special linker-computed symbols: `_estack`, `__bss_end__`, `_Min_Stack_Size`, etc.
+It also extracts linker-computed symbols: `_estack`, `__bss_end__`, `_Min_Stack_Size`, and similar.
 
-#### `.su` files (stack usage)
+### `.su` Files (Stack Usage)
 
-Per-function static stack frame sizes emitted by GCC.
+Per-function static stack frame sizes emitted by GCC. Add `-fstack-usage` to your compiler flags. GCC emits one `.su` file per compiled `.c` source file.
 
-**How to produce:**  
-Add `-fstack-usage` to your compiler flags. GCC emits one `.su` file per compiled `.c` file.
-
-File format:
 ```
-src/adc.c:45:12:adc_dma_isr    48    static
-src/main.c:112:8:update_pid   128    static
-src/main.c:200:5:log_telemetry 96   static
+src/adc.c:45:12:adc_dma_isr     48    static
+src/main.c:112:8:update_pid    128    static
+src/main.c:200:5:log_telemetry  96    static
 ```
 
-Frame types:
-- `static` — fixed frame size, fully bounded
-- `dynamic` — frame grows at runtime (VLAs, `alloca`) — flagged as unbounded
-- `dynamic,bounded` — dynamic but with a known maximum
+Frame type annotations:
 
-#### `startup_*.s`
+| Type | Meaning |
+|---|---|
+| `static` | Fixed frame size; fully bounded |
+| `dynamic` | Frame grows at runtime (VLAs, `alloca`); flagged as unbounded |
+| `dynamic,bounded` | Dynamic but with a known maximum |
 
-The startup assembly file containing the vector table. Used to identify all ISR handler names.
+### `startup_*.s` (Vector Table)
+
+The startup assembly file containing the interrupt vector table. Used to identify all ISR handler names.
 
 ```asm
 g_pfnVectors:
@@ -387,9 +390,9 @@ g_pfnVectors:
     .word  ADC_IRQHandler
 ```
 
-Every function pointer in this table is treated as an ISR entry point.
+Every function pointer in this table is treated as an ISR entry point for call graph traversal.
 
-#### Linker script (`.ld`)
+### Linker Script (`.ld`)
 
 Provides memory region definitions, section-to-region assignments, and stack size declarations.
 
@@ -403,15 +406,11 @@ MEMORY {
 }
 ```
 
----
-
 ### Chip Profile YAML
 
-A YAML file describing the target MCU's memory topology, bus matrix, cache configuration, and flash wait-state table. These are bundled with the tool in the `chips/` directory.
+A YAML file describing the target MCU's memory topology, bus matrix, cache configuration, and Flash wait-state table. Pre-built profiles for supported chips are located in the `chips/` directory.
 
-See the [Chip Profiles](#chip-profiles) section for the full schema and how to add new chips.
-
----
+See [Chip Profiles](#chip-profiles) for the full schema and instructions for adding new chips.
 
 ### AUTOSAR Schedule Configuration (`schedule.json`)
 
@@ -421,7 +420,7 @@ Defines the multi-core real-time task architecture, core scheduling algorithms, 
 {
   "chip": "stm32f407.yaml",
   "cores": [
-    { "id": 0, "algorithm": "RM", "preemptive": true },
+    { "id": 0, "algorithm": "RM",  "preemptive": true },
     { "id": 1, "algorithm": "EDF", "preemptive": true }
   ],
   "tasks": [
@@ -453,17 +452,18 @@ Defines the multi-core real-time task architecture, core scheduling algorithms, 
 ```
 
 **Task timing attributes:**
-- `period_ms` / `period_us`: Task activation period.
-- `deadline_ms` / `deadline_us`: Relative deadline (supports implicit $D=T$, constrained $D < T$, and arbitrary deadlines).
-- `priority`: Static priority integer (1 = highest priority; required for RM/DM, `null` or 255 for EDF).
-- `core`: CPU core assignment (0, 1, ...).
-- `resource_locks`: List of shared resource IDs locked during task execution.
 
----
+| Field | Description |
+|---|---|
+| `period_ms` / `period_us` | Task activation period |
+| `deadline_ms` / `deadline_us` | Relative deadline; defaults to period when omitted (implicit $D = T$) |
+| `priority` | Static priority integer (1 = highest; `null` or 255 for EDF cores) |
+| `core` | CPU core assignment (0, 1, …) |
+| `resource_locks` | List of shared resource IDs locked during task execution |
 
 ### Optional: Renode Trace
 
-A plain-text execution trace captured from Renode simulation. Each line contains a simulated cycle count and program counter value. The tool resolves PC addresses to function names via the ELF symbol table and builds a call frequency profile.
+A plain-text execution trace captured from Renode simulation. Each line contains a simulated cycle count and program counter value. The tool resolves PC addresses to function names via the ELF symbol table and builds a call frequency profile used for `[SIMULATED]` WCET tagging.
 
 If not provided, dynamic profile data is omitted and hot-path analysis falls back to heuristics.
 
@@ -474,59 +474,59 @@ If not provided, dynamic profile data is omitted and hot-path analysis falls bac
 ```
 firmware_analyzer/
 │
-├── main.py                     # CLI entry point and analysis pipeline
+├── main.py                       # CLI entry point and analysis pipeline
 │
 ├── parsers/
-│   ├── map_parser.py           # .map → list of Symbol objects
-│   ├── ld_parser.py            # linker script → MemoryRegion[], stack config
-│   ├── su_parser.py            # .su files → {func_name: frame_bytes}
-│   ├── elf_parser.py           # arm-none-eabi-objdump → disassembly, call graph
-│   ├── startup_parser.py       # startup_*.s → list of ISR handler names
-│   └── autosar_parser.py       # schedule.json → AutosarConfig (tasks, cores, resources)
+│   ├── map_parser.py             # .map → list of Symbol objects
+│   ├── ld_parser.py              # linker script → MemoryRegion[], stack config
+│   ├── su_parser.py              # .su files → {func_name: frame_bytes}
+│   ├── elf_parser.py             # arm-none-eabi-objdump → disassembly, call graph
+│   ├── startup_parser.py         # startup_*.s → list of ISR handler names
+│   └── autosar_parser.py         # schedule.json → AutosarConfig (tasks, cores, resources)
 │
 ├── models/
-│   ├── chip_profile.py         # YAML chip profile loader and validator
-│   ├── symbol.py               # Symbol dataclass (name, address, size, section, obj)
-│   ├── finding.py              # Finding dataclass (rule, severity, tag, message, fix)
-│   └── autosar_task.py         # AutosarTask, AutosarCore, Resource, IPCChannel models
+│   ├── chip_profile.py           # YAML chip profile loader and validator
+│   ├── symbol.py                 # Symbol dataclass (name, address, size, section, obj)
+│   ├── finding.py                # Finding dataclass (rule, severity, tag, message, fix)
+│   └── autosar_task.py           # AutosarTask, AutosarCore, Resource, IPCChannel
 │
 ├── analysis/
-│   ├── region_classifier.py    # Symbol address → memory region name
-│   ├── call_graph.py           # Build call graph from disassembly
-│   ├── stack_analyzer.py       # Worst-case stack depth DFS
-│   ├── timing_model.py         # Datasheet-derived latency calculations
-│   ├── wcet_extractor.py       # Code-size & Renode WCET extraction + ISR modeling
-│   ├── rta_engine.py           # Multi-core Response Time Analysis & Utilization
-│   ├── deadlock_detector.py    # Resource Allocation Graph (RAG) deadlock detection
-│   ├── scheduler_sim.py        # Discrete-event preemptive scheduler simulation & jitter
+│   ├── region_classifier.py      # Symbol address → memory region name
+│   ├── call_graph.py             # Build call graph from disassembly (BL/BLX instructions)
+│   ├── stack_analyzer.py         # Worst-case stack depth via DFS
+│   ├── timing_model.py           # Datasheet-derived latency calculations
+│   ├── wcet_extractor.py         # Code-size & Renode WCET extraction + ISR modeling
+│   ├── rta_engine.py             # Multi-core Response Time Analysis & utilization
+│   ├── deadlock_detector.py      # Resource Allocation Graph (RAG) deadlock detection
+│   ├── scheduler_sim.py          # Discrete-event preemptive scheduler simulation & jitter
 │   └── rules/
-│       ├── isr_placement.py        # Rule 1: ISR in Flash vs ITCM
-│       ├── bus_contention.py       # Rule 2: DMA/CPU AHB bus contention
-│       ├── itcm_overflow.py        # Rule 3: ITCM section capacity check
-│       ├── stack_risk.py           # Rule 4: Worst-case stack overflow
-│       ├── dma_alignment.py        # Rule 5: 32-byte DMA buffer alignment
-│       ├── stack_section.py        # Rule 6: No explicit stack section
-│       ├── isr_blocking_calls.py   # Rule 7: ISR calling blocking functions
-│       ├── stack_bss_proximity.py  # Rule 8: Stack/BSS zero gap proximity
-│       ├── flash_fragmentation.py  # Rule 9: Flash cache locality audit
-│       ├── chip_specific.py        # Chip-specific constraint checks
-│       └── autosar_rules.py        # AUTOSAR RTA, deadline misses, overload, & deadlocks
+│       ├── isr_placement.py          # Rule 1:  ISR in Flash vs. ITCM
+│       ├── bus_contention.py         # Rule 2:  DMA/CPU AHB bus contention
+│       ├── itcm_overflow.py          # Rule 3:  ITCM section capacity check
+│       ├── stack_risk.py             # Rule 4:  Worst-case stack overflow
+│       ├── dma_alignment.py          # Rule 5:  32-byte DMA buffer alignment
+│       ├── stack_section.py          # Rule 6:  No explicit stack section
+│       ├── isr_blocking_calls.py     # Rule 7:  ISR calling blocking functions
+│       ├── stack_bss_proximity.py    # Rule 8:  Stack/BSS zero-gap proximity
+│       ├── flash_fragmentation.py    # Rule 9:  Flash cache locality audit
+│       ├── chip_specific.py          # Chip-specific constraint checks
+│       └── autosar_rules.py          # Rules 10–16: AUTOSAR schedulability rules
 │
 ├── simulation/
-│   └── renode_runner.py            # Renode headless runner and trace parser
+│   └── renode_runner.py              # Renode headless runner and trace parser
 │
 ├── report/
-│   ├── terminal_report.py          # ANSI color boxed report + firmware scoring
-│   ├── text_report.py              # Plain-text file output
-│   ├── autosar_report.py           # Executive Summary table + 7-section AUTOSAR report
-│   ├── gantt_chart.py              # Terminal text Gantt timeline & Jitter analysis table
-│   └── matplotlib_charts.py        # Production Matplotlib charts (Outputs 1, 2, 3, 4)
+│   ├── terminal_report.py            # ANSI-color boxed report + firmware scoring
+│   ├── text_report.py                # Plain-text file output
+│   ├── autosar_report.py             # 7-section AUTOSAR executive summary report
+│   ├── gantt_chart.py                # Terminal Gantt timeline & jitter analysis table
+│   └── matplotlib_charts.py          # Publication-quality Matplotlib charts (Outputs 1–4)
 │
 └── chips/
-    ├── stm32f746.yaml               # STM32F746 (Cortex-M7, 216 MHz, ITCM/DTCM)
-    ├── stm32f407.yaml               # STM32F407 (Cortex-M4, 168 MHz, CCM)
-    ├── stm32g474.yaml               # STM32G474 (Cortex-M4, 170 MHz, CCM)
-    └── stm32h745.yaml               # STM32H745 (Dual-Core: Cortex-M7 480MHz + M4 240MHz)
+    ├── stm32f746.yaml                 # STM32F746  (Cortex-M7, 216 MHz, ITCM 16 KB + DTCM 64 KB)
+    ├── stm32f407.yaml                 # STM32F407  (Cortex-M4, 168 MHz, CCM 64 KB)
+    ├── stm32g474.yaml                 # STM32G474  (Cortex-M4, 170 MHz, CCM 32 KB)
+    └── stm32h745.yaml                 # STM32H745  (Dual-Core: Cortex-M7 480 MHz + M4 240 MHz)
 ```
 
 ---
@@ -540,18 +540,16 @@ firmware_analyzer/
 ```python
 from parsers.map_parser import parse_map_file, parse_map_special_symbols
 
-symbols = parse_map_file("firmware.map")
+symbols     = parse_map_file("firmware.map")
 # → List[Symbol]
 
 linker_syms = parse_map_special_symbols("firmware.map")
 # → {'_estack': 0x20020000, '_Min_Stack_Size': 4096, ...}
 ```
 
-**`parse_map_file(filepath: str) → List[Symbol]`**  
-Parses a GCC linker `.map` file and returns every symbol with its name, address, size, section, and source object file. Handles single-line and split two-line GNU linker output formats. Zero-size symbols are skipped.
+**`parse_map_file(filepath)`** — Parses a GCC linker `.map` file and returns every symbol with its name, address, size, section, and source object file. Handles both single-line and split two-line GNU linker output formats. Zero-size symbols are skipped.
 
-**`parse_map_special_symbols(filepath: str) → dict`**  
-Extracts linker-computed special symbols (`_estack`, `__bss_end__`, `_Min_Stack_Size`, etc.) whose values are fully resolved expressions (like `ORIGIN(SRAM) + LENGTH(SRAM)`). These are more reliable than parsing the `.ld` file directly.
+**`parse_map_special_symbols(filepath)`** — Extracts linker-computed special symbols (`_estack`, `__bss_end__`, `_Min_Stack_Size`, etc.) whose values are fully resolved expressions. These are more reliable than parsing the `.ld` file directly.
 
 ---
 
@@ -560,18 +558,16 @@ Extracts linker-computed special symbols (`_estack`, `__bss_end__`, `_Min_Stack_
 ```python
 from parsers.ld_parser import parse_ld_file, parse_ld_symbols
 
-regions = parse_ld_file("linker.ld")
+regions  = parse_ld_file("linker.ld")
 # → {'FLASH': MemoryRegion(origin=0x08000000, length=1048576, attrs='rx'), ...}
 
-ld_syms = parse_ld_symbols("linker.ld")
-# → {'_Min_Stack_Size': 0x400, '_estack': ...}
+ld_syms  = parse_ld_symbols("linker.ld")
+# → {'_Min_Stack_Size': 0x400, ...}
 ```
 
-**`parse_ld_file(filepath: str) → dict[str, MemoryRegion]`**  
-Parses the `MEMORY {}` block to extract every named region with its origin, length, and attribute flags (`rx`, `rw`, `rwx`).
+**`parse_ld_file(filepath)`** — Parses the `MEMORY {}` block to extract every named region with its origin, length, and attribute flags (`rx`, `rw`, `rwx`).
 
-**`parse_ld_symbols(filepath: str) → dict`**  
-Resolves `ORIGIN()` and `LENGTH()` expressions and stack size declarations within `SECTIONS {}`. Falls back gracefully when expressions cannot be resolved statically.
+**`parse_ld_symbols(filepath)`** — Resolves `ORIGIN()` and `LENGTH()` expressions and stack size declarations within `SECTIONS {}`. Falls back gracefully when expressions cannot be resolved statically.
 
 ---
 
@@ -580,12 +576,11 @@ Resolves `ORIGIN()` and `LENGTH()` expressions and stack size declarations withi
 ```python
 from parsers.su_parser import parse_su_files
 
-stack_usage = parse_su_files("path/to/build/")
+stack_usage = parse_su_files("build/")
 # → {'adc_dma_isr': 48, 'update_pid': 128, 'log_telemetry': 96}
 ```
 
-**`parse_su_files(directory: str) → dict[str, int]`**  
-Walks a directory, finds all `.su` files, and builds a `{function_name: frame_bytes}` mapping. Functions with `dynamic` (unbounded) frame types are flagged separately in the stack risk rule.
+**`parse_su_files(directory)`** — Walks a directory, finds all `.su` files, and builds a `{function_name: frame_bytes}` mapping. Functions with `dynamic` (unbounded) frame types are flagged separately in the stack risk rule.
 
 ---
 
@@ -595,11 +590,10 @@ Walks a directory, finds all `.su` files, and builds a `{function_name: frame_by
 from parsers.elf_parser import run_objdump_disassembly
 
 disassembly = run_objdump_disassembly("firmware.elf")
-# → raw disassembly text (str) from arm-none-eabi-objdump -d
+# → raw disassembly text from arm-none-eabi-objdump -d
 ```
 
-**`run_objdump_disassembly(elf_path: str) → str`**  
-Shells out to `arm-none-eabi-objdump -d`. Falls back to `pyelftools` + `capstone` if the toolchain binary is not on `PATH`. Returns raw disassembly text consumed by the call graph builder.
+**`run_objdump_disassembly(elf_path)`** — Shells out to `arm-none-eabi-objdump -d`. Falls back to `pyelftools` + `capstone` if the toolchain binary is not on `PATH`. Returns raw disassembly text consumed by the call graph builder.
 
 ---
 
@@ -612,8 +606,7 @@ isr_names = parse_startup_file("startup_stm32f746xx.s")
 # → ['Reset_Handler', 'NMI_Handler', 'HardFault_Handler', 'DMA1_Stream0_IRQHandler', ...]
 ```
 
-**`parse_startup_file(filepath: str) → List[str]`**  
-Parses the `g_pfnVectors` (or equivalent) section in the startup assembly file and returns every function pointer name listed in the vector table. This is the authoritative ISR list — do not rely on naming conventions alone.
+**`parse_startup_file(filepath)`** — Parses the `g_pfnVectors` (or equivalent) section in the startup assembly file and returns every function pointer name listed in the vector table. This is the authoritative ISR list; do not rely on naming conventions alone.
 
 ---
 
@@ -626,12 +619,11 @@ config = load_autosar_config("schedule.json", symbols)
 # → AutosarConfig with cores, tasks, resources, and inter_core_channels
 ```
 
-**`load_autosar_config(filepath: str, symbols: List[Symbol]) → AutosarConfig`**  
-Parses the AUTOSAR configuration JSON or YAML file:
+**`load_autosar_config(filepath, symbols)`** — Parses the AUTOSAR configuration file and:
 - Normalizes core scheduling algorithms (`RM`, `DM`, `EDF`) and preemption modes.
 - Validates task parameters: period, deadline (defaults to period if omitted), priority (1 = highest), and core assignment.
-- **Fuzzy Symbol Matching:** Validates every `entry_function` against the firmware symbol table. If a symbol name is mistyped, computes Levenshtein distance, suggests the closest matching firmware function (e.g., `Did you mean 'motor_control_loop'? (distance: 1)`), and raises an explicit error.
-- Loads shared resource definitions and inter-core communication channels for Priority Ceiling Protocol and blocking latency analysis.
+- **Fuzzy symbol matching:** Validates every `entry_function` against the firmware symbol table. If a symbol name is mistyped, computes Levenshtein distance and suggests the closest matching firmware function (e.g., `Did you mean 'motor_control_loop'? (distance: 1)`).
+- Loads shared resource definitions and inter-core communication channels for PCP blocking analysis.
 
 ---
 
@@ -653,11 +645,12 @@ task = AutosarTask(
 )
 ```
 
-Core classes:
-- **`AutosarTask`**: Encapsulates task attributes, timing parameters (`period_us`, `deadline_us`), priority, core binding, WCET metrics (`wcet_us`, `wcet_cycles`, `wcet_tag`), blocking terms (`blocking_time_us`), and computed response times (`wcrt_us`).
-- **`AutosarCore`**: Configures CPU core ID, scheduling policy (`"RM"`, `"DM"`, or `"EDF"`), and preemption capability.
-- **`Resource`**: Shared hardware/software mutex with assigned ceiling priority.
-- **`IPCChannel`**: Cross-core message passing channel with measured or configured blocking latency.
+| Class | Description |
+|---|---|
+| `AutosarTask` | Task attributes, timing parameters (`period_us`, `deadline_us`), priority, core binding, WCET metrics (`wcet_us`, `wcet_tag`), blocking terms, and computed response times (`wcrt_us`) |
+| `AutosarCore` | Core ID, scheduling policy (`"RM"`, `"DM"`, or `"EDF"`), and preemption capability |
+| `Resource` | Shared hardware/software mutex with assigned ceiling priority |
+| `IPCChannel` | Cross-core message passing channel with measured or configured blocking latency |
 
 ---
 
@@ -675,12 +668,10 @@ sym = Symbol(
 )
 ```
 
-Fields:
-
 | Field | Type | Description |
 |---|---|---|
 | `name` | `str` | Symbol name (function or variable) |
-| `address` | `int` | Final linked address (integer) |
+| `address` | `int` | Final linked address |
 | `size` | `int` | Size in bytes |
 | `section` | `str` | Section name (e.g. `.text.adc_dma_isr`, `.dma_bufs.spi_rx_buf`) |
 | `object_file` | `str` | Source `.o` file |
@@ -700,8 +691,6 @@ f = Finding(
     fix='__attribute__((section(".itcm_text")))'
 )
 ```
-
-Fields:
 
 | Field | Type | Description |
 |---|---|---|
@@ -724,8 +713,7 @@ chip = load_chip_profile("chips/stm32f746.yaml")
 #                   vector_table_section, bus_matrix
 ```
 
-**`load_chip_profile(filepath: str) → dict`**  
-Loads and validates a chip YAML profile. Raises `ValueError` if required keys are missing.
+**`load_chip_profile(filepath)`** — Loads and validates a chip YAML profile. Raises `ValueError` if required keys are missing.
 
 ---
 
@@ -736,17 +724,11 @@ Loads and validates a chip YAML profile. Raises `ValueError` if required keys ar
 ```python
 from analysis.region_classifier import classify_address
 
-region = classify_address(0x0000000C, linker_regions, chip_regions)
-# → "ITCM"
-
-region = classify_address(0x08004120, linker_regions, chip_regions)
-# → "FLASH"
+classify_address(0x0000000C, linker_regions, chip_regions)  # → "ITCM"
+classify_address(0x08004120, linker_regions, chip_regions)  # → "FLASH"
 ```
 
-**`classify_address(addr: int, linker_regions: dict, chip_regions: dict) → str`**  
-Maps a symbol address to a memory region name by checking against linker-script-derived region boundaries first, then falling back to chip profile boundaries. Returns `"UNKNOWN"` if no region matches.
-
-Priority: linker script regions take precedence over chip profile (linker script is the user's actual intent).
+**`classify_address(addr, linker_regions, chip_regions)`** — Maps a symbol address to a memory region name. Checks linker-script-derived region boundaries first, then falls back to chip profile boundaries. Linker script regions take precedence over chip profile defaults, as they represent the user's actual intent.
 
 ---
 
@@ -759,10 +741,9 @@ call_graph = build_call_graph_from_disassembly(disassembly_text)
 # → {'main': {'update_pid', 'log_telemetry'}, 'update_pid': {'memcpy'}, ...}
 ```
 
-**`build_call_graph_from_disassembly(disassembly: str) → dict[str, set[str]]`**  
-Parses `BL` and `BLX` instructions from objdump output to build a static call graph. Returns a dict mapping each function to the set of functions it directly calls.
+**`build_call_graph_from_disassembly(disassembly)`** — Parses `BL` and `BLX` instructions from objdump output to build a static call graph. Returns a dict mapping each function to the set of functions it directly calls.
 
-> **Limitation:** Function pointers, callbacks, and vtables break the static call graph. Functions with indirect calls are not automatically included. The stack analysis may undercount worst-case depth in those cases.
+> **Known limitation:** Function pointers, callbacks, and vtables break the static call graph. Functions with indirect calls are not automatically included, so the worst-case stack depth may be undercounted in those cases. See [Limitations](#limitations) for the LTO-based mitigation strategy.
 
 ---
 
@@ -774,13 +755,12 @@ from analysis.stack_analyzer import analyze_all_stacks
 max_depth, max_chain, has_recursion = analyze_all_stacks(
     call_graph, stack_usage, entry_points={"main", "adc_dma_isr"}
 )
-# max_depth: 3840 (bytes)
-# max_chain: ['main', 'update_pid', 'log_telemetry']
+# max_depth:    3840  (bytes)
+# max_chain:    ['main', 'update_pid', 'log_telemetry']
 # has_recursion: False
 ```
 
-**`analyze_all_stacks(call_graph, stack_usage, entry_points) → tuple[int, list, bool]`**  
-Runs a DFS through the call graph starting from each entry point, summing `.su` frame sizes to compute worst-case stack depth. Detects cycles and flags them as unbounded recursion. Returns the maximum depth found across all entry points.
+**`analyze_all_stacks(call_graph, stack_usage, entry_points)`** — Runs a DFS through the call graph starting from each entry point, summing `.su` frame sizes to compute worst-case stack depth. Detects cycles and flags them as unbounded recursion. Returns the maximum depth found across all entry points.
 
 ---
 
@@ -789,31 +769,26 @@ Runs a DFS through the call graph starting from each entry point, summing `.su` 
 ```python
 from analysis.timing_model import calc_isr_penalty_ns, lookup_wait_states
 
-ws = lookup_wait_states(freq_mhz=216, chip=chip_profile)
-# → 7  (from STM32F7 RM Table 4)
-
+ws      = lookup_wait_states(freq_mhz=216, chip=chip_profile)   # → 7
 penalty = calc_isr_penalty_ns(freq_mhz=216, handler_region="FLASH", chip=chip_profile)
 # → {
 #     'itcm_ns':       55.6,
 #     'flash_warm_ns': 92.6,
 #     'flash_cold_ns': 351.9,
-#     'citation':      'ARMv7-M ARM §B1.5.6 (12 cy entry) + STM32F7 RM Table 4 (7 WS at 216 MHz)'
+#     'citation': 'ARMv7-M ARM §B1.5.6 (12 cy entry) + STM32F7 RM Table 4 (7 WS at 216 MHz)'
 #   }
 ```
 
-**`lookup_wait_states(freq_mhz: float, chip: dict) → int`**  
-Looks up the flash wait-state count for the given frequency from the chip profile's `flash_wait_states` table.
+**ISR latency formula:**
 
-**`calc_isr_penalty_ns(freq_mhz, handler_region, chip) → dict`**  
-Calculates ISR entry latency for ITCM, warm-cache Flash, and cold-cache Flash. All results include a `citation` string referencing the exact datasheet section used.
-
-Formula:
 ```
 cycle_ns       = 1000.0 / freq_mhz
-hw_entry_ns    = exception_entry_cycles × cycle_ns        # ARMv7-M ARM B1.5.6
+hw_entry_ns    = exception_entry_cycles × cycle_ns         # ARMv7-M ARM §B1.5.6
 flash_warm_ns  = (hw_entry_cycles + wait_states + 1) × cycle_ns
 flash_cold_ns  = (hw_entry_cycles + cache_line_words × (wait_states + 1)) × cycle_ns
 ```
+
+---
 
 #### `analysis/wcet_extractor.py`
 
@@ -824,21 +799,26 @@ extract_wcets_for_tasks(tasks, symbols, call_graph, chip_profile, dynamic_profil
 # Fills in task.wcet_us, task.wcet_cycles, task.wcet_tag, task.wcet_call_chain in-place
 ```
 
-**`extract_wcets_for_tasks(tasks, symbols, call_graph, chip_profile, dynamic_profile=None)`**  
-Determines the Worst-Case Execution Time for every periodic task and ISR:
-- **`[CALCULATED]` (Code-size heuristic):** Sourced from core architecture profiles or YAML overrides:
-  - **Automatic Core Resolution:** Automatically selects instruction density and CPI penalty according to the target core specified in the chip YAML:
-    - `Cortex-M0 / M0+ / M1`: $2.10\text{ bytes/insn}$, $1.35\text{ CPI}$ (ARMv6-M 16-bit Thumb, 2-stage pipeline)
-    - `Cortex-M3 / M4`: $2.50\text{ bytes/insn}$, $1.15\text{ CPI}$ (ARMv7-M mixed Thumb-2, 3-stage pipeline)
-    - `Cortex-M7`: $2.60\text{ bytes/insn}$, $0.85\text{ CPI}$ (ARMv7E-M superscalar dual-issue pipeline)
-    - `Cortex-M23`: $2.15\text{ bytes/insn}$, $1.30\text{ CPI}$ (ARMv8-M Baseline)
-    - `Cortex-M33`: $2.55\text{ bytes/insn}$, $1.15\text{ CPI}$ (ARMv8-M Mainline)
-    - `Cortex-M55 / M85`: $2.65\text{--}2.70\text{ bytes/insn}$, $0.75\text{--}0.90\text{ CPI}$ (Helium vector / dual-issue)
-    - `Cortex-R / Cortex-A`: $2.50\text{--}4.00\text{ bytes/insn}$, $0.50\text{--}0.90\text{ CPI}$
-  - **YAML Overrides:** Users can override parameters either globally or per-core in multicore profiles using `bytes_per_instruction` and `cpi_penalty` (or `cpi`).
-- **`[SIMULATED]` (Renode functional trace):** Derived from execution cycle counts and instruction frequencies captured during live emulation.
-- **Hardware-Aware ISR Integration:** Automatically excludes non-periodic exception handlers (`Reset_Handler`, `HardFault_Handler`, `NMI_Handler`) while modeling periodic device ISRs (`*_IRQHandler`) with hardware entry/return overhead ($12 + 12 = 24\text{ cycles}$) plus flash wait-state inflation.
-- **`[HEURISTIC]` Fallback:** Assigns a 10-cycle unmeasured placeholder when symbols are missing from the ELF table.
+Determines Worst-Case Execution Time for every periodic task and ISR using the following priority chain:
+
+1. **`[CALCULATED]` — Code-size heuristic:** Selects instruction density and CPI penalty automatically according to the target core in the chip YAML:
+
+   | Core | Bytes/insn | CPI | Pipeline |
+   |---|---|---|---|
+   | Cortex-M0 / M0+ / M1 | 2.10 | 1.35 | ARMv6-M 16-bit Thumb, 2-stage |
+   | Cortex-M3 / M4 | 2.50 | 1.15 | ARMv7-M mixed Thumb-2, 3-stage |
+   | Cortex-M7 | 2.60 | 0.85 | ARMv7E-M superscalar dual-issue |
+   | Cortex-M23 | 2.15 | 1.30 | ARMv8-M Baseline |
+   | Cortex-M33 | 2.55 | 1.15 | ARMv8-M Mainline |
+   | Cortex-M55 / M85 | 2.65–2.70 | 0.75–0.90 | Helium vector / dual-issue |
+
+   Override globally or per-core via `bytes_per_instruction` and `cpi_penalty` in the chip YAML.
+
+2. **`[SIMULATED]` — Renode functional trace:** Derived from execution cycle counts captured during live emulation.
+
+3. **Hardware-aware ISR integration:** Automatically excludes non-periodic exception handlers (`Reset_Handler`, `HardFault_Handler`, `NMI_Handler`) while modeling periodic device ISRs (`*_IRQHandler`) with hardware entry/return overhead (12 + 12 = 24 cycles baseline) plus Flash wait-state inflation.
+
+4. **`[HEURISTIC]` fallback:** Assigns a 10-cycle unmeasured placeholder when symbols are absent from the ELF table.
 
 ---
 
@@ -849,16 +829,19 @@ from analysis.rta_engine import run_rta, compute_utilization
 
 run_rta(tasks, cores, resources, channels, chip_regions, chip_profile)
 util_info = compute_utilization(tasks, cores)
-# → Computes worst-case response times (t.wcrt_us) and per-core utilization stats
 ```
 
-**`run_rta(tasks, cores, resources, channels, chip_regions, chip_profile)`**  
-Performs exact Response Time Analysis (RTA) solving Joseph & Pandya's recurrence relation:
-$$R_i^{(k+1)} = C_i + B_i + \sum_{j \in \text{hp}(i)} \left\lceil \frac{R_i^{(k)}}{T_j} \right\rceil C_j$$
-- Computes Priority Ceiling Protocol (PCP / SRP) blocking terms ($B_i$).
+**`run_rta(...)`** — Performs exact Response Time Analysis solving Joseph & Pandya's recurrence relation:
+
+$$R_i^{(0)} = C_i + B_i$$
+
+$$R_i^{(k+1)} = C_i + B_i + \sum_{\tau_j \in \mathrm{hp}(i)} \left\lceil \frac{R_i^{(k)}}{T_j} \right\rceil C_j$$
+
+- Computes Priority Ceiling Protocol (PCP / SRP) blocking terms $B_i$.
 - Incorporates inter-core IPC blocking delays from hardware channels.
 - Supports Rate Monotonic (RM), Deadline Monotonic (DM), and Earliest Deadline First (EDF Processor Demand Analysis).
 - Computes safe slack margin ($D_i - R_i$) and flags deadline misses.
+- Precondition: analysis terminates immediately with `schedulable = False` for all tasks when $U > 1.0$, avoiding the singularity in the busy-period $L^*$ formula.
 
 ---
 
@@ -868,11 +851,9 @@ $$R_i^{(k+1)} = C_i + B_i + \sum_{j \in \text{hp}(i)} \left\lceil \frac{R_i^{(k)
 from analysis.deadlock_detector import detect_deadlocks
 
 deadlock_findings = detect_deadlocks(tasks, resources)
-# → Returns Finding objects if circular lock-ordering dependencies are detected
 ```
 
-**`detect_deadlocks(tasks: List[AutosarTask], resources: List[Resource]) → List[Finding]`**  
-Constructs a Resource Allocation Graph (RAG) across all tasks and cores. Detects potential circular wait conditions (e.g., Task 1 holds R1 waiting for R2 while Task 2 holds R2 waiting for R1) and generates `DEADLOCK_RISK` findings before runtime deployment.
+**`detect_deadlocks(tasks, resources)`** — Constructs a Resource Allocation Graph (RAG) across all tasks and cores. Detects potential circular wait conditions (e.g., Task 1 holds R1 waiting for R2 while Task 2 holds R2 waiting for R1) and generates `DEADLOCK_RISK` findings before runtime deployment.
 
 ---
 
@@ -885,24 +866,23 @@ sim = simulate_schedule(tasks, stochastic=False)
 # → SimulationResult with gantt intervals, start_times, and deadline misses
 ```
 
-**`simulate_schedule(tasks: List[AutosarTask], stochastic: bool = False) → SimulationResult`**  
-Runs a discrete-event fixed-priority / EDF simulation over the task set hyperperiod:
-- **Strict Periodic Release:** Releases arrive deterministically at integer multiples $k \times T$, eliminating floating-point accumulation drift.
-- **Optional Stochasticity (`--stochastic-sim`):** Simulates real-world execution variability (85%–100% WCET) while preserving deterministic release periodicity.
-- **Hyperperiod Explosion Protection:** Detects explosive LCM hyperperiods ($H > 200\text{ ms}$) and safely bounds execution to a representative 30ms window.
+**`simulate_schedule(tasks, stochastic)`** — Runs a discrete-event fixed-priority / EDF simulation over the task set hyperperiod:
+
+- **Deterministic periodic release:** Release times at exact integer multiples $k \times T$, eliminating floating-point drift.
+- **Optional stochasticity (`--stochastic-sim`):** Uniform execution time sampling (85–100% WCET) while preserving deterministic release periodicity.
+- **Hyperperiod explosion protection:** Detects explosive LCM hyperperiods ($H > 200$ ms) and bounds execution to a representative 30 ms window.
+- **Jitter metric:** $\theta_i = (2 \cdot \text{preemptions}_i) / C_i$ — an empirical simulation-derived diagnostic ratio, not an analytical upper bound. A warning is raised when $\theta_i \ge 0.15$.
 - Records activation start times for start-time jitter analysis.
 
 ---
 
 ### Rule Engine
 
-All rules follow the same interface:
+All rules follow the same interface and are independently importable and testable:
 
 ```python
 findings: List[Finding] = check_rule(symbols, ..., chip_regions, chip_profile)
 ```
-
-Each rule is independently importable and testable.
 
 ---
 
@@ -925,11 +905,9 @@ dynamic_profile = parse_renode_trace("exec_trace.txt", symbols)
 # → {'main_loop': 1024, 'update_pid': 1024, 'adc_dma_isr': 2048, ...}
 ```
 
-**`run_renode_trace(elf_path, platform_repl, sim_duration_ms) → str`**  
-Writes a temporary `.resc` script, launches Renode headless, runs the firmware for the specified time window, and returns the path to the captured trace file.
+**`run_renode_trace(elf_path, platform_repl, sim_duration_ms)`** — Writes a temporary `.resc` script, launches Renode headless, runs firmware for the specified duration, and returns the path to the captured trace file.
 
-**`parse_renode_trace(trace_file, symbols) → dict[str, int]`**  
-Parses the Renode execution trace, resolves PC addresses to function names using the ELF symbol table, and returns an instruction-count-per-function dict.
+**`parse_renode_trace(trace_file, symbols)`** — Parses the execution trace, resolves PC addresses to function names using the ELF symbol table, and returns an instruction-count-per-function dictionary.
 
 ---
 
@@ -940,14 +918,11 @@ Parses the Renode execution trace, resolves PC addresses to function names using
 ```python
 from report.terminal_report import compute_score, print_terminal_report
 
-score = compute_score(findings)               # → int (0–100)
+score = compute_score(findings)                        # → int (0–100)
 print_terminal_report(findings, score, dynamic_profile)
 ```
 
-**`print_terminal_report(findings, score, dynamic_profile=None)`**  
-Prints a structured terminal report featuring:
-- **Visual Severity Blocks:** Grouped into distinct Unicode boxed sections with ANSI styling: `CRITICAL FINDINGS` (red), `WARNING FINDINGS` (yellow), and `INFORMATIONAL FINDINGS` (gray).
-- Score deduction breakdown and memory map summary.
+Prints a structured terminal report with ANSI-styled severity blocks: `CRITICAL FINDINGS` (red), `WARNING FINDINGS` (yellow), and `INFORMATIONAL FINDINGS` (grey), plus the score deduction breakdown and memory map summary.
 
 ---
 
@@ -959,29 +934,18 @@ from report.autosar_report import print_autosar_report
 print_autosar_report(tasks, cores, resources, channels, isr_names, sim, charts_dir="charts")
 ```
 
-**`print_autosar_report(...)`**  
 Renders the complete 7-section AUTOSAR timing and schedulability report:
-- **Executive Summary Table:** Compact top-level overview (Task, Period, WCET, R, D, Margin, Verdict, and Deadlock warning flags).
-- Section 1: Task $\to$ Function Mapping with WCET confidence tags.
-- Section 2: Schedulability Dashboard with per-core utilization bars and RM/EDF bounds.
-- Section 3: Response Time Analysis Table with blocking terms and slack margins.
-- Section 4: Simulated Execution Timeline (Text Gantt).
-- Section 5: Start-Time Jitter Analysis Table with control stability ratings.
-- Section 6: Visual Artifacts catalog.
-- Section 7: Confidence Notes & Analytical Assumptions.
 
----
-
-#### `report/gantt_chart.py`
-
-```python
-from report.gantt_chart import render_gantt_chart, render_jitter_table
-
-text_gantt = render_gantt_chart(sim, tasks)
-jitter_table = render_jitter_table(sim, tasks)
-```
-
-Renders ASCII/Unicode timeline charts and per-task jitter metrics ($|t_{\text{actual}} - t_{\text{ideal}}|$) directly in stdout.
+| Section | Content |
+|---|---|
+| Executive Summary | Compact top-level overview: Task, Period, WCET, R, D, Margin, Verdict |
+| 1. Task → Function Mapping | WCET confidence tags per task |
+| 2. Schedulability Dashboard | Per-core utilization bars, RM/EDF bounds, analytical verdict |
+| 3. Response Time Analysis | Blocking terms, slack margins, WCRT table |
+| 4. Simulated Execution Timeline | Text-mode Gantt chart |
+| 5. Jitter Analysis | Per-activation start-time variation, control stability rating |
+| 6. Visual Artifacts | Catalog of Matplotlib output paths |
+| 7. Confidence Notes | Analytical assumptions and tag definitions |
 
 ---
 
@@ -994,151 +958,160 @@ generate_matplotlib_charts(tasks, cores, sim, out_dir="charts")
 ```
 
 Generates 4 publication-quality visual artifacts in `--charts-dir`:
-1. **Schedulability Dashboard (`schedulability_dashboard.png`)**: Core-by-core utilization progress bars color-coded by bound.
-2. **Gantt Schedule Timeline (`gantt_chart.png`)**: Full timeline plus zoomed inset, featuring a $\ge 5\text{px}$ visual bar floor, $3.0\text{pt}$ vertical spine, gold star floor markers (`*`), and smart dynamic zoom for sub-millisecond task sets.
-3. **Response Time vs Deadline (`response_time_chart.png`)**: Horizontal stacked bar breakdown of WCET, interference, blocking, and safe slack margins, featuring unit auto-scaling (`µs` vs `ms`).
-4. **Start-Time Jitter Plot (`jitter_chart.png`)**: Per-activation start-time variation graph.
+
+| Output | Filename | Description |
+|---|---|---|
+| 1 | `schedulability_dashboard.png` | Per-core CPU utilization progress bars, color-coded by RM/EDF bounds |
+| 2 | `gantt_chart.png` | Multi-core Gantt timeline with preemption markers, guaranteed ≥ 5 px visual bar floor |
+| 3 | `response_time_chart.png` | Stacked horizontal bars: WCET, interference, blocking, and slack margins |
+| 4 | `jitter_chart.png` | Per-activation start-time variation graph |
 
 ---
 
 ## AUTOSAR Schedulability & Timing Extension
 
-The analyzer includes an industrial-grade real-time schedulability and multi-core timing extension tailored for AUTOSAR OS, OSEK/VDX, and real-time RTOS firmware running on ARM Cortex-M microcontrollers.
+The analyzer includes an industrial-grade real-time schedulability and multi-core timing extension tailored for AUTOSAR OS, OSEK/VDX, and real-time RTOS firmware on ARM Cortex-M microcontrollers.
 
 ### Response Time Analysis (RTA) Engine
 
-Response Time Analysis (RTA) computes the worst-case time elapsed between a task's periodic release and its physical completion, accounting for preemption from higher-priority tasks, resource contention, and inter-core communication overhead.
+Response Time Analysis computes the worst-case time elapsed between a task's periodic release and its physical completion, accounting for preemption from higher-priority tasks, resource contention, and inter-core communication overhead.
 
 #### Mathematical Formulation
 
-For preemptive fixed-priority scheduling (Rate Monotonic / Deadline Monotonic), worst-case response time $R_i$ for task $\tau_i$ is solved using Joseph & Pandya's recurrence relation:
+For preemptive fixed-priority scheduling (RM / DM), worst-case response time $R_i$ for task $\tau_i$ is solved using Joseph & Pandya's recurrence relation:
 
 $$R_i^{(0)} = C_i + B_i$$
-$$R_i^{(k+1)} = C_i + B_i + \sum_{\tau_j \in \text{hp}(i)} \left\lceil \frac{R_i^{(k)}}{T_j} \right\rceil C_j$$
+
+$$R_i^{(k+1)} = C_i + B_i + \sum_{\tau_j \in \mathrm{hp}(i)} \left\lceil \frac{R_i^{(k)}}{T_j} \right\rceil C_j$$
 
 Where:
-- $C_i$: Worst-Case Execution Time (WCET) of task $\tau_i$. Sourced with explicit confidence tags (`[CALCULATED]`, `[SIMULATED]`, or `[HEURISTIC]`).
-- $B_i$: Maximum blocking term from lower-priority tasks holding shared resources under the **Priority Ceiling Protocol (PCP / SRP)** or cross-core IPC delays.
-- $\text{hp}(i)$: The set of tasks with higher priority than $\tau_i$.
-- $T_j$: Activation period of higher-priority task $\tau_j$.
+- $C_i$ — Worst-Case Execution Time (WCET) of task $\tau_i$; confidence-tagged as `[CALCULATED]`, `[SIMULATED]`, or `[HEURISTIC]`.
+- $B_i$ — Maximum blocking term from lower-priority tasks under Priority Ceiling Protocol (PCP / SRP), or cross-core IPC delays.
+- $\mathrm{hp}(i)$ — The set of tasks with strictly higher priority than $\tau_i$.
+- $T_j$ — Activation period of higher-priority task $\tau_j$.
 
-The recurrence terminates when $R_i^{(k+1)} = R_i^{(k)}$ (converged, task is schedulable if $R_i \le D_i$) or when $R_i^{(k+1)} > D_i$ (deadline miss detected).
+The recurrence terminates when $R_i^{(k+1)} = R_i^{(k)}$ (task schedulable if $R_i \le D_i$) or when $R_i^{(k+1)} > D_i$ (deadline miss). The analysis requires $U < 1.0$ as a precondition; tasks are immediately classified as unschedulable when total utilization reaches or exceeds 100%.
 
 #### Core Scheduling Policies
 
-1. **Rate Monotonic (RM):** Static priorities inversely proportional to periods ($T_i < T_j \implies \text{Prio}_i > \text{Prio}_j$). Bounded by the Liu & Layland hyperbolic utilization threshold:
-   $$U_{\text{RM}}(n) = n \left(2^{1/n} - 1\right) \quad (\approx 69.3\% \text{ as } n \to \infty)$$
-2. **Deadline Monotonic (DM):** Static priorities inversely proportional to relative deadlines ($D_i < D_j \implies \text{Prio}_i > \text{Prio}_j$). Optimal for constrained deadline task sets ($D_i \le T_i$).
-3. **Earliest Deadline First (EDF):** Dynamic priority assignment based on absolute deadlines. Evaluated via Processor Demand Analysis (PDA) ensuring cumulative demand does not exceed available CPU capacity:
+1. **Rate Monotonic (RM):** Static priorities inversely proportional to periods. Bounded by the Liu & Layland hyperbolic utilization threshold:
+
+   $$U_{\mathrm{RM}}(n) = n\!\left(2^{1/n} - 1\right) \approx 69.3\% \text{ as } n \to \infty$$
+
+2. **Deadline Monotonic (DM):** Static priorities inversely proportional to relative deadlines. Optimal for constrained deadline task sets ($D_i \le T_i$).
+
+3. **Earliest Deadline First (EDF):** Dynamic priority assignment based on absolute deadlines. Evaluated via Processor Demand Analysis (PDA):
+
    $$h(t) = \sum_{D_i \le t} \left(1 + \left\lfloor \frac{t - D_i}{T_i} \right\rfloor\right) C_i \le t \quad \forall t \le H$$
 
 ---
 
 ### Multi-Core Scheduling & Deadlock Analysis
 
-The analyzer models asymmetric and symmetric multi-core architectures (e.g. STM32H745 Cortex-M7 @ 480 MHz + Cortex-M4 @ 240 MHz).
+The analyzer models asymmetric and symmetric multi-core architectures (e.g., STM32H745: Cortex-M7 @ 480 MHz + Cortex-M4 @ 240 MHz).
 
 #### Independent Core Partitions
-Tasks are partitioned across physical cores (`core: 0`, `core: 1`). Each core operates an independent scheduling discipline (e.g., Core 0 running fixed-priority RM while Core 1 executes dynamic EDF).
+
+Tasks are partitioned across physical cores (`core: 0`, `core: 1`, …). Each core operates an independent scheduling discipline, supporting mixed configurations such as Core 0 running fixed-priority RM while Core 1 executes dynamic EDF.
 
 #### Cross-Core Synchronization & Blocking
-Inter-core communication channels (`inter_core_channels`) model hardware semaphore, mailbox, and shared-memory FIFOs. Delays incurred during cross-core messaging are integrated into the task's blocking term $B_i$.
+
+Inter-core communication channels (`inter_core_channels`) model hardware semaphores, mailboxes, and shared-memory FIFOs. Delays incurred during cross-core messaging are integrated into the task's blocking term $B_i$.
 
 #### Deadlock Risk Detection
-The analyzer constructs a global **Resource Allocation Graph (RAG)** across all tasks and cores:
-- If tasks acquire multiple mutexes or cross-core resources in non-identical orders (e.g., Task A locks R1 then R2; Task B locks R2 then R1), a circular wait cycle is detected.
-- The tool flags `DEADLOCK_RISK` directly on the executive summary and verdict banner:
-  ```
-  ● VERDICT: SCHEDULABLE — all tasks meet their deadlines (per RTA). [CALCULATED]
-    ⚠ WARNING: DEADLOCK_RISK detected — system may freeze at runtime despite meeting timing deadlines.
-  ```
+
+A global Resource Allocation Graph (RAG) is constructed across all tasks and cores. Circular wait conditions are flagged directly on the executive summary verdict banner:
+
+```
+● VERDICT: SCHEDULABLE — all tasks meet their deadlines (per RTA). [CALCULATED]
+  ⚠ WARNING: DEADLOCK_RISK detected — system may freeze at runtime despite meeting timing deadlines.
+```
 
 ---
 
 ### Hardware-Aware ISR Integration
 
-Real-time embedded firmware does not execute in isolation from the hardware interrupt controller. Device interrupts preempt RTOS tasks at hardware priority levels.
+Device interrupts preempt RTOS tasks at hardware priority levels and must be included in the schedulability model.
 
-1. **Periodic Device ISRs vs. Non-Periodic Exception Handlers:**
-   - **Periodic Device ISRs:** Identified by the vector table (e.g., `TIM2_IRQHandler`, `ADC_IRQHandler`, `DMA1_Stream0_IRQHandler`). Modeled as highest-priority periodic tasks with periods matching their hardware trigger rates.
-   - **Non-Periodic Exception Handlers:** Automatically excluded from periodic schedulability modeling (`Reset_Handler`, `HardFault_Handler`, `NMI_Handler`, `Default_Handler`). These run once at boot or upon hardware fault and do not consume recurring CPU bandwidth.
-2. **ARMv7-M Exception Overhead:**
-   - Standard hardware stacking/unstacking: 12 cycles exception entry + 12 cycles exception exit = $24\text{ cycles}$ baseline overhead.
-3. **Flash Wait-State Memory Inflation:**
-   - If an ISR resides in Flash instead of zero-wait-state RAM/ITCM, every instruction fetch incurs wait states ($WS$) derived from the chip profile:
-     $$C_{\text{ISR}} = \left(24 + N_{\text{insn}} \times (1 + WS)\right) \times \frac{1000}{F_{\text{CPU}}}$$
-   - This inflation is integrated directly into the task's WCET.
+**Periodic device ISRs vs. non-periodic exception handlers:**
+
+| Type | Examples | Treatment |
+|---|---|---|
+| Periodic device ISR | `TIM2_IRQHandler`, `ADC_IRQHandler`, `DMA1_Stream0_IRQHandler` | Modeled as highest-priority periodic tasks with hardware-measured periods |
+| Non-periodic exception | `Reset_Handler`, `HardFault_Handler`, `NMI_Handler` | Automatically excluded from periodic schedulability modeling |
+
+**ARMv7-M exception overhead:** 12 cycles exception entry + 12 cycles exception exit = 24 cycles baseline.
+
+**Flash wait-state memory inflation:** If an ISR resides in Flash instead of zero-wait-state RAM/ITCM:
+
+$$C_{\mathrm{ISR}} = \left(24 + N_{\mathrm{insn}} \times (1 + WS)\right) \times \frac{1000}{F_{\mathrm{CPU}}}$$
+
+This inflation is integrated directly into the task's WCET before RTA.
 
 ---
 
 ### Discrete-Event Scheduler Simulation & Jitter Analysis
 
-To validate analytical RTA predictions, the analyzer includes an exact discrete-event simulator (`analysis/scheduler_sim.py`).
+To validate analytical RTA predictions, the analyzer includes an exact discrete-event simulator.
 
-1. **Deterministic Periodic Release ($k \times T$):**
-   - In real-time operating systems, hardware timers trigger periodic releases deterministically. Release times are generated strictly at integer multiples of the period:
-     $$\text{rel}_k = k \times T$$
-   - This eliminates floating-point drift accumulation, ensuring that highest-priority uninhibited tasks maintain strict **0.00 µs start-time jitter**.
-2. **Optional Stochastic Simulation (`--stochastic-sim`):**
-   - Real firmware task durations fluctuate with input data. Passing `--stochastic-sim` introduces stochastic execution time variation (uniformly sampled between 85% and 100% of WCET) while preserving deterministic release periodicity.
-3. **Hyperperiod Explosion Protection:**
-   - For non-harmonic task sets, the hyperperiod ($H = \text{LCM}(T_1, \dots, T_n)$) can explode to millions of microseconds (e.g., $323,323\text{ ms}$).
-   - The simulator caps simulation at `MAX_HYPERPERIOD_US = 200,000 µs` (200 ms). When an explosion is detected, the full multi-second timeline is suppressed in favor of a clean **Representative 30ms Window**, and schedulability is verified via analytical RTA.
-4. **Start-Time Jitter Metrics:**
-   - Jitter is measured for each activation: $J_k = |t_{\text{actual\_start}} - k \times T|$.
-   - High jitter in control loops degrades phase margin and control stability. Assessed as `EXCELLENT` ($< 1\%$ period), `ACCEPTABLE` ($< 5\%$), or `POOR` ($> 10\%$).
+| Feature | Detail |
+|---|---|
+| **Deterministic periodic release** | Releases at exact integer multiples $k \times T$; highest-priority uninhibited tasks maintain strict 0.00 µs start-time jitter |
+| **Optional stochastic simulation** | `--stochastic-sim` samples execution time uniformly from 85–100% WCET while preserving deterministic release periodicity |
+| **Hyperperiod explosion protection** | Simulation capped at 200,000 µs (200 ms); a clean representative 30 ms window is rendered when explosion is detected |
+| **Jitter rating** | EXCELLENT (< 1% period), ACCEPTABLE (< 5%), POOR (> 10%) |
 
 ---
 
 ### Visual Artifacts & Matplotlib Charts
 
-Passing `--charts-dir <dir>` automatically renders 4 publication-ready, interview-grade visualization figures:
+Passing `--charts-dir <dir>` automatically renders 4 publication-ready visualization figures:
 
-#### Output 1: Schedulability Dashboard (`schedulability_dashboard.png`)
+#### Output 1 — Schedulability Dashboard (`schedulability_dashboard.png`)
 - Per-core horizontal CPU utilization progress bars.
-- Color-coded safety thresholds: Green below RM bound ($\approx 69\%$), Yellow up to 85%, Red above 100% (Overload).
-- Shows exact utilization percentages, bound thresholds, and analytical schedulability verdicts.
+- Color-coded safety thresholds: Green below RM bound (~69%), Yellow up to 85%, Red above 100% (overload).
+- Shows utilization percentages, bound thresholds, and analytical schedulability verdicts.
 
-#### Output 2: Gantt Schedule Timeline (`gantt_chart.png`)
-- Multi-core execution timelines plotted over one hyperperiod with task preemption indicators (`>`).
-- **Guaranteed $\ge 5\text{px}$ Visual Bar Floor:** Sub-microsecond tasks (e.g. $0.1\text{ µs}$ or $12\text{ µs}$ on a 200ms timeline) are protected by a minimum display floor with a $3.0\text{pt}$ vertical anchor line (`vlines`) and gold star marker (`*`), preventing sub-pixel invisible hairlines.
-- **Smart Dynamic Zoom:** Inset panel automatically bounds to the initial execution burst ($\approx 200\text{ µs}$) for microsecond task sets, displaying wide readable blocks.
-- **Representative Explosion Mode:** Cleanly switches to a 30ms representative window when hyperperiod explosion occurs.
+#### Output 2 — Gantt Schedule Timeline (`gantt_chart.png`)
+- Multi-core execution timelines over one hyperperiod with preemption indicators.
+- **Guaranteed ≥ 5 px visual bar floor:** Sub-microsecond tasks (e.g., 0.1 µs on a 200 ms timeline) are protected by a minimum display floor with a 3.0 pt vertical anchor line and gold star marker, preventing sub-pixel invisible hairlines.
+- **Smart dynamic zoom:** Inset panel automatically bounds to the initial execution burst for microsecond task sets.
+- **Representative explosion mode:** Cleanly switches to a 30 ms representative window when hyperperiod explosion occurs.
 
-#### Output 3: Response Time vs. Deadline Chart (`response_time_chart.png`)
-- Horizontal stacked bar breakdown per task displaying:
-  - Blue: WCET execution duration.
-  - Orange: Interference from higher-priority tasks and blocking terms.
-  - Green: Safe slack margin ($D - R$).
-  - Red: Deadline deficit / miss overrun.
-- **Auto-Scaling Time Units:** Automatically displays sub-millisecond values in microseconds (`R=12µs`) and millisecond values in milliseconds (`D=50.0ms (+49.99ms)`), eliminating misleading rounding artifacts like `R=0.0ms`.
+#### Output 3 — Response Time vs. Deadline Chart (`response_time_chart.png`)
+- Horizontal stacked bar breakdown per task:
+  - Blue: WCET execution duration
+  - Orange: Interference from higher-priority tasks and blocking terms
+  - Green: Safe slack margin ($D - R$)
+  - Red: Deadline deficit / miss overrun
+- **Auto-scaling time units:** Displays sub-millisecond values in µs and millisecond values in ms, eliminating misleading rounding artifacts like `R=0.0ms`.
 
-#### Output 4: Start-Time Jitter Plot (`jitter_chart.png`)
-- Graphs start-time variation ($|t_{\text{start}} - k \times T|$) across consecutive activations.
-- Features discrete activation markers, dashed lines for low-count activations, and clarifying footnotes regarding simulation granularity on single-task cores.
+#### Output 4 — Start-Time Jitter Plot (`jitter_chart.png`)
+- Graphs start-time variation ($|t_{\mathrm{start}} - k \times T|$) across consecutive activations.
+- Discrete activation markers with dashed lines for low-activation-count tasks.
 
 ---
 
 ## Rule Engine Deep Dive
 
-### Rule 1 — ISR Placement
+### Hardware & Memory Architecture Rules (Rules 1–9)
+
+#### Rule 1 — ISR Placement
 
 **Module:** `analysis/rules/isr_placement.py`
 
 **Check:** Is any ISR handler placed in FLASH instead of ITCM/DTCM/CCM?
 
-**Why it matters:** On Cortex-M7, an ISR in Flash incurs the full flash wait-state penalty plus a cache-line fill on a cold miss. This adds jitter to interrupt latency that cannot be bounded statically — the ISR may execute in 55 ns under warm-cache conditions but take 352 ns after a cache eviction.
+**Why it matters:** On Cortex-M7, an ISR in Flash incurs the full Flash wait-state penalty plus a cache-line fill on a cold miss. This adds unbounded jitter to interrupt latency — the ISR may execute in 55 ns under warm-cache conditions but take 352 ns after a cache eviction.
 
 **Calculated penalty (STM32F746 @ 216 MHz, 7 WS):**
 
-| Placement | Calculated Latency | Cold-Cache Worst Case |
+| Placement | Warm Latency | Cold-Cache Worst Case |
 |---|---|---|
 | ITCM | ~55.6 ns | ~55.6 ns (zero jitter) |
-| FLASH (warm) | ~92.6 ns | ~351.9 ns |
+| FLASH | ~92.6 ns | ~351.9 ns |
 
-**Formula references:**
-- ARMv7-M Architecture Reference Manual, §B1.5.6 — exception entry cycles (12)
-- STM32F7 Reference Manual, Table 4 — flash wait states vs. frequency
+**Formula references:** ARMv7-M Architecture Reference Manual §B1.5.6 (12-cycle exception entry) + STM32F7 Reference Manual Table 4 (wait states vs. frequency).
 
 **Fix:**
 ```c
@@ -1147,7 +1120,7 @@ void __attribute__((section(".itcm_text"))) adc_dma_isr(void) { ... }
 
 ---
 
-### Rule 2 — DMA Bus Contention
+#### Rule 2 — DMA Bus Contention
 
 **Module:** `analysis/rules/bus_contention.py`
 
@@ -1157,49 +1130,43 @@ void __attribute__((section(".itcm_text"))) adc_dma_isr(void) { ... }
 1. Identifies DMA buffer symbols by section name (`.dma_bufs`) — `[HEURISTIC]`
 2. Looks up which AHB bus port each buffer's memory region connects to (from chip profile `bus_port` field)
 3. Checks `bus_matrix.contending_pairs` in the chip profile to determine if CPU and DMA share that port
-4. Exempts the port if the CPU stack and data are confirmed to reside on a different port (e.g., CPU in DTCM, DMA in SRAM1)
+4. Exempts the port if the CPU stack and data reside on a different port (e.g., CPU in DTCM, DMA in SRAM1)
 
 **Published bandwidth degradation:** ~30–35% CPU bandwidth loss when competing for the same SRAM bank with DMA (STM32F7 bus matrix behavior).
 
-**Example scenario — no contention:**
-- DMA buffer in SRAM1 (AHB_S1)
-- CPU stack and `.data`/`.bss` in DTCM (D-bus, isolated)
-- Result: CPU does not use AHB_S1 → no contention → `INFO` finding
-
-**Example scenario — contention:**
-- DMA buffer in SRAM1 (AHB_S1)
-- CPU `.data` also in SRAM1 (AHB_S1)
-- Result: CPU and DMA share AHB_S1 → `WARNING` (-20 points)
+| Scenario | Result |
+|---|---|
+| DMA in SRAM1 (AHB_S1), CPU stack in DTCM (D-bus, isolated) | INFO — no contention |
+| DMA in SRAM1 (AHB_S1), CPU `.data` also in SRAM1 | WARNING — shared bus port |
 
 ---
 
-### Rule 3 — ITCM Overflow
+#### Rule 3 — ITCM Overflow
 
 **Module:** `analysis/rules/itcm_overflow.py`
 
 **Check:** Does the sum of all symbols mapped to ITCM exceed the ITCM capacity?
 
-This is a pure arithmetic check on `.map` data. ITCM overflow results in a hard linker error at build time; a near-overflow warning gives early notice.
+This is a pure arithmetic check on `.map` data. ITCM overflow results in a hard linker error; a near-overflow warning provides early notice.
 
-**Thresholds:**
-- > 90% capacity → `WARNING`
-- > 100% capacity → `CRITICAL`
+| Usage | Severity |
+|---|---|
+| > 90% capacity | WARNING |
+| > 100% capacity | CRITICAL |
 
 ---
 
-### Rule 4 — Stack Overflow Risk
+#### Rule 4 — Stack Overflow Risk
 
 **Module:** `analysis/rules/stack_risk.py`
 
 **Check:** Does the worst-case call chain's total stack requirement exceed a safe fraction of the declared stack size?
 
 **Algorithm:**
-- DFS through the call graph from each entry point (`main` + all ISR handlers)
-- Sum `.su` frame sizes along each path
-- Track cycles → flag as unbounded recursion
-- Compare worst-case depth against `_Min_Stack_Size`
-
-**Thresholds:**
+1. DFS through the call graph from each entry point (`main` + all ISR handlers)
+2. Sum `.su` frame sizes along each path
+3. Track cycles → flag as unbounded recursion
+4. Compare worst-case depth against `_Min_Stack_Size`
 
 | Usage | Severity |
 |---|---|
@@ -1207,13 +1174,11 @@ This is a pure arithmetic check on `.map` data. ITCM overflow results in a hard 
 | > 90% of declared stack | CRITICAL |
 | Recursion detected | CRITICAL (unbounded) |
 
-**Also checks:**
-- Stack placement: Is `_estack` in DTCM (zero wait-state push/pop, DMA-isolated)? If stack is in SRAM instead of CCM/DTCM, reports `INFO` improvement opportunity.
-- No explicit stack section in the linker script (separate Rule 6)
+**Also checks:** Stack placement — is `_estack` in DTCM (zero wait-state push/pop, DMA-isolated)? If the stack is in SRAM instead of CCM/DTCM, reports an INFO improvement opportunity.
 
 ---
 
-### Rule 5 — DMA Buffer Alignment
+#### Rule 5 — DMA Buffer Alignment
 
 **Module:** `analysis/rules/dma_alignment.py`
 
@@ -1228,43 +1193,46 @@ This is a pure arithmetic check on `.map` data. ITCM overflow results in a hard 
 uint8_t __attribute__((aligned(32))) spi_rx_buf[512];
 ```
 
-**Note:** STM32F407 (Cortex-M4) has no D-cache, so alignment is a forward-compatibility best practice rather than a correctness requirement on that chip.
+> **Note:** STM32F407 (Cortex-M4) has no D-cache, so alignment is a forward-compatibility best practice rather than a correctness requirement on that chip.
 
 ---
 
-### Rule 6 — No Explicit Stack Section
+#### Rule 6 — No Explicit Stack Section
 
 **Module:** `analysis/rules/stack_section.py`
 
 **Check:** Does the linker script define an explicit stack section?
 
-Without an explicit stack section, the stack silently grows downward from `_estack` into heap or `.bss` — no MPU guard is possible. An explicit section enables stack overflow detection via hardware MPU null-pointer trapping.
+Without an explicit stack section, the stack silently grows downward from `_estack` into heap or `.bss` with no MPU guard possible. An explicit section enables stack overflow detection via hardware MPU null-pointer trapping.
 
 ---
 
-### Rule 7 — ISR Calls Blocking Function
+#### Rule 7 — ISR Calls Blocking Function
 
 **Module:** `analysis/rules/isr_blocking_calls.py`
 
-**Check:** Does any interrupt service routine (ISR) call blocking APIs (such as `HAL_Delay`, `osDelay`, or polling loops like `HAL_*_PollFor*`)?
+**Check:** Does any ISR call blocking APIs (`HAL_Delay`, `osDelay`, or polling loops such as `HAL_*_PollFor*`)?
 
-**Why it matters:** On ARM Cortex-M microcontrollers, `HAL_Delay()` busy-waits on `uwTick`, which is incremented by the SysTick interrupt handler. If an ISR fires at an interrupt priority equal to or higher than SysTick, `SysTick_Handler` cannot preempt the ISR. `uwTick` never increments, creating an unrecoverable **deadlock**. Furthermore, polling loops inside ISRs starve all lower-priority interrupts and real-time tasks.
+**Why it matters:** On ARM Cortex-M, `HAL_Delay()` busy-waits on `uwTick`, which is incremented by `SysTick_Handler`. If an ISR fires at a priority equal to or higher than SysTick, `SysTick_Handler` cannot preempt the ISR, `uwTick` never increments, and an unrecoverable deadlock results. Polling loops inside ISRs additionally starve all lower-priority interrupts and real-time tasks.
+
+> **Note:** RTOS ISR-safe variants (e.g., FreeRTOS `xSemaphoreGiveFromISR`) are not flagged. Only non-ISR-safe blocking calls are reported.
 
 ---
 
-### Rule 8 — Stack / BSS Proximity & Guard Gap
+#### Rule 8 — Stack / BSS Proximity & Guard Gap
 
 **Module:** `analysis/rules/stack_bss_proximity.py`
 
-**Check:** Is there a zero physical safety gap between the descending stack limit and ascending global `.bss`/`.data` variables, or is the declared stack size insufficient?
+**Check:** Is there a zero physical safety gap between the descending stack limit and ascending global `.bss` / `.data` variables, or is the declared stack size insufficient?
 
-**Findings:**
-- `stack_bss_zero_gap` (`CRITICAL`): The stack section immediately abuts `.bss`. Any transient stack spike immediately corrupts global state with zero hardware trap margin.
-- `stack_declared_too_small` (`WARNING`): Declared `_Min_Stack_Size` provides zero headroom above static call-chain depths.
+| Finding | Severity | Description |
+|---|---|---|
+| `stack_bss_zero_gap` | CRITICAL | Stack section immediately abuts `.bss`; any transient stack spike corrupts global state with zero hardware trap margin |
+| `stack_declared_too_small` | WARNING | Declared `_Min_Stack_Size` provides zero headroom above static call-chain depths |
 
 ---
 
-### Rule 9 — Flash Fragmentation & Cache Locality
+#### Rule 9 — Flash Fragmentation & Cache Locality
 
 **Module:** `analysis/rules/flash_fragmentation.py`
 
@@ -1274,55 +1242,46 @@ Without an explicit stack section, the stack silently grows downward from `_esta
 
 ---
 
-### Chip-Specific Rules
-
-**Module:** `analysis/rules/chip_specific.py`
-
-Rules that are only applicable to certain chip families:
-
-**`check_no_itcm_chip`** — On STM32F407 (Cortex-M4), ITCM does not exist. If the startup file lists ISRs but the chip has no ITCM, reports an `INFO` finding noting the ISR must remain in Flash or CCM.
-
-**`check_stack_in_sram_not_ccm`** — On chips with CCM (e.g., STM32F407, STM32G474), if the stack is placed in SRAM instead of CCM, reports an improvement opportunity. CCM provides zero-wait-state stack operations and is isolated from DMA.
-
----
-
-### AUTOSAR Timing & Schedulability Rules
+### AUTOSAR Timing & Schedulability Rules (Rules 10–16)
 
 **Module:** `analysis/rules/autosar_rules.py`
 
 #### Rule 10 — Task Deadline Miss (`autosar_deadline_miss`)
-- **Severity:** `CRITICAL`
+- **Severity:** CRITICAL
 - **Check:** Does worst-case response time exceed relative deadline ($R_i > D_i$)?
-- **Details:** Flags the specific overrun ($\Delta = R_i - D_i$), call chain, and WCET confidence tag. Recommends raising priority, reducing WCET (e.g., moving hot functions to ITCM/CCM), or offloading to another core.
+- **Details:** Reports the specific overrun ($\Delta = R_i - D_i$), call chain, and WCET confidence tag. Recommends raising priority, reducing WCET (e.g., moving hot functions to ITCM/CCM), or offloading to another core.
 
 #### Rule 11 — CPU Overload (`autosar_cpu_overload`)
-- **Severity:** `CRITICAL`
+- **Severity:** CRITICAL
 - **Check:** Does total CPU utilization exceed 100% on any core ($\sum C_i / T_i > 1.0$)?
 - **Details:** Schedulability is impossible under any priority assignment. Recommends increasing periods or rebalancing tasks across cores.
 
 #### Rule 12 — WCET Dominates Period (`autosar_wcet_dominates`)
-- **Severity:** `WARNING`
+- **Severity:** WARNING
 - **Check:** Does a task's single execution consume more than 50% of its period ($C_i / T_i > 0.50$)?
 - **Details:** High execution-to-period ratios leave insufficient slack for lower-priority tasks and interrupt handling. Recommends inserting preemption points or decomposing into asynchronous helper stages.
 
 #### Rule 13 — Sub-optimal Rate Monotonic Priority (`autosar_rm_suboptimal`)
-- **Severity:** `INFO`
+- **Severity:** INFO
 - **Check:** Is a task assigned RM priority when its deadline is strictly less than its period ($D_i < T_i$)?
 - **Details:** RM is provably suboptimal for constrained deadlines. Switching the core to Deadline Monotonic (DM) or EDF can resolve impending deadline misses.
 
 #### Rule 14 — Multi-Core Deadlock Risk (`autosar_deadlock_risk`)
-- **Severity:** `CRITICAL` / `WARNING`
+- **Severity:** CRITICAL / WARNING
 - **Check:** Are shared resources or IPC channels acquired in circular or non-monotonic order across tasks or cores?
-- **Details:** Flags circular dependency paths. System may freeze at runtime despite passing pure uniprocessor timing analyses.
+- **Details:** Flags circular dependency paths in the RAG. System may freeze at runtime despite passing uniprocessor timing analyses.
 
 #### Rule 15 — Entry Function Mismatch (`autosar_entry_function_mismatch`)
-- **Severity:** `CRITICAL`
+- **Severity:** CRITICAL
 - **Check:** Does the task's `entry_function` declared in `schedule.json` exist in the firmware ELF symbol table?
-- **Details:** Calculates Levenshtein edit distance and suggests the closest matching valid symbol. Excludes the unmapped task from schedulability analysis to avoid false claims.
+- **Details:** Computes Levenshtein edit distance and suggests the closest matching valid symbol. Excludes the unmapped task from schedulability analysis to avoid false claims.
 
-#### Rule 16 — Priority Ceiling Protocol (PCP) Blocking (`autosar_pcp_blocking`)
-- **Severity:** `INFO`
-- **Check:** Reports maximum bounded priority inversion duration ($B_i$) experienced by a task due to lower-priority tasks in critical sections. Confirms PCP/SRP guarantees that priority inversion is bounded to at most a single critical section.
+#### Rule 16 — Priority Ceiling Protocol Blocking (`autosar_pcp_blocking`)
+- **Severity:** INFO
+- **Check:** Reports the maximum bounded priority inversion duration ($B_i$) due to lower-priority tasks in critical sections.
+- **Details:** Confirms PCP/SRP guarantees that priority inversion is bounded to at most a single critical section. The blocking bound $B_i^{\mathrm{IPC}}$ is a conservative worst-case upper bound computed as:
+
+$$B_i = \sum_k m_{i,k} \cdot \left(\frac{N_{\mathrm{spin}}}{f_{\mathrm{core}}} + t_{\mathrm{write}}\right)$$
 
 ---
 
@@ -1335,7 +1294,7 @@ Rules that are only applicable to certain chip families:
 | `chips/stm32f746.yaml` | STM32F746 | Cortex-M7 | 216 MHz | ITCM 16 KB + DTCM 64 KB |
 | `chips/stm32f407.yaml` | STM32F407 | Cortex-M4 | 168 MHz | CCM 64 KB |
 | `chips/stm32g474.yaml` | STM32G474 | Cortex-M4 | 170 MHz | CCM 32 KB |
-| `chips/stm32h745.yaml` | STM32H745 | Dual-Core: Cortex-M7 + M4 | 480 MHz / 240 MHz | ITCM 64 KB + DTCM 128 KB + SRAM |
+| `chips/stm32h745.yaml` | STM32H745 | Dual-Core: Cortex-M7 + M4 | 480 / 240 MHz | ITCM 64 KB + DTCM 128 KB + SRAM |
 
 ---
 
@@ -1343,7 +1302,7 @@ Rules that are only applicable to certain chip families:
 
 ```yaml
 name: STM32F746             # Human-readable chip name
-core: cortex-m7             # cortex-m4 | cortex-m7
+core: cortex-m7             # cortex-m0 | cortex-m4 | cortex-m7 | cortex-m33
 clock_max_mhz: 216          # Maximum rated CPU frequency
 
 cache:
@@ -1367,12 +1326,12 @@ memory_regions:
     dma_accessible: false
   # ... additional regions
 
-flash_wait_states:           # Ordered list: freq_max_mhz → wait state count
+flash_wait_states:          # Ordered list: freq_max_mhz → wait state count
   - { freq_max_mhz: 30,  ws: 0 }
   - { freq_max_mhz: 60,  ws: 1 }
   - { freq_max_mhz: 216, ws: 7 }
 
-exception_entry_cycles: 12  # ARMv7-M ARM §B1.5.6 (always 12 for standard Cortex-M)
+exception_entry_cycles: 12  # ARMv7-M ARM §B1.5.6 (12 for all standard Cortex-M)
 vector_table_section: .isr_vector
 
 bus_matrix:
@@ -1392,7 +1351,7 @@ bus_matrix:
    - `MEMORY` block: region origins and sizes (Section: *Memory map*)
    - `flash_wait_states`: VOS1 wait-state table (Section: *Embedded Flash*)
    - `bus_matrix.contending_pairs`: AHB master-slave connections (Section: *Bus matrix*)
-   - `exception_entry_cycles`: 12 for all standard ARMv7-M/ARMv8-M devices
+   - `exception_entry_cycles`: 12 for all standard ARMv7-M / ARMv8-M devices
 3. Set `dma_accessible: false` for ITCM and DTCM (architectural constraint on all STM32F7 devices).
 4. Pass the new profile with `--chip chips/<chip_name>.yaml`.
 
@@ -1400,36 +1359,36 @@ bus_matrix:
 
 ## Scoring Model
 
-The tool computes an overall firmware efficiency score out of 100 by deducting penalty points for each finding:
+The tool computes an overall firmware efficiency score out of 100 by deducting penalty points per finding:
 
-| Rule | Penalty Points | Rationale |
+| Rule | Penalty | Rationale |
 |---|---|---|
-| `autosar_deadline_miss` | -30 | Hard real-time deadline violation under worst-case preemption |
-| `stack_recursion` | -30 | Unbounded stack depth — undetectable at analysis time |
-| `stack_overflow_risk` | -30 | Silent data corruption if stack overflow occurs |
-| `stack_bss_zero_gap` | -30 | Stack limit immediately abuts `.bss` with zero protection margin |
-| `autosar_deadlock_risk` | -30 | Circular resource lock acquisition order (deadlock risk) |
-| `autosar_cpu_overload` | -25 | System total utilization exceeds 100% capacity |
-| `autosar_entry_function_mismatch` | -25 | Task entry function missing from firmware symbols |
-| `stack_declared_too_small` | -25 | Declared stack size provides zero margin over static call depth |
-| `isr_calls_blocking_function` | -25 | ISR calls `HAL_Delay` or polling API (unrecoverable deadlock / starvation risk) |
-| `itcm_overflow_risk` | -25 | Hard linker failure if memory budget exceeded |
-| `dma_bus_contention` | -20 | Memory bus matrix throughput degradation |
-| `autosar_concurrent_stack` | -20 | Cumulative concurrent stack depth exceeds declared stack under preemption |
-| `isr_in_flash` | -15 | Interrupt latency jitter, determinism loss |
-| `flash_fragmentation` | -15 | Hot functions spread across disparate Flash sectors (cache miss penalty) |
-| `autosar_utilization_warning` | -15 | Utilization above Liu & Layland RM bound ($n(2^{1/n}-1)$) |
-| `autosar_wcet_dominates` | -10 | Single task execution consumes > 50% of its period |
-| `autosar_double_risk` | -10 | Unbounded recursion combined with tight real-time deadline |
-| `autosar_heuristic_wcet` | -10 | Function not found in map/trace; WCET is an unverified guess |
-| `autosar_rm_suboptimal` | -10 | Constrained deadline ($D < T$) scheduled under RM instead of DM |
-| `no_explicit_stack_section` | -10 | Stack overflow undetectable at runtime via MPU |
-| `unaligned_dma_buffer` | -10 | D-cache maintenance data corruption |
-| `autosar_isr_flash_wcet` | -5 | ISR executed from Flash inflates WCET |
+| `autosar_deadline_miss` | −30 | Hard real-time deadline violation under worst-case preemption |
+| `stack_recursion` | −30 | Unbounded stack depth; undetectable at analysis time |
+| `stack_overflow_risk` | −30 | Silent data corruption if stack overflow occurs |
+| `stack_bss_zero_gap` | −30 | Stack limit immediately abuts `.bss` with zero protection margin |
+| `autosar_deadlock_risk` | −30 | Circular resource lock acquisition order (deadlock risk) |
+| `autosar_cpu_overload` | −25 | Total utilization exceeds 100% capacity |
+| `autosar_entry_function_mismatch` | −25 | Task entry function missing from firmware symbols |
+| `stack_declared_too_small` | −25 | Declared stack size provides zero margin over static call depth |
+| `isr_calls_blocking_function` | −25 | ISR calls `HAL_Delay` or polling API (deadlock / starvation risk) |
+| `itcm_overflow_risk` | −25 | Hard linker failure if memory budget exceeded |
+| `dma_bus_contention` | −20 | Memory bus matrix throughput degradation |
+| `autosar_concurrent_stack` | −20 | Cumulative concurrent stack depth exceeds declared stack under preemption |
+| `isr_in_flash` | −15 | Interrupt latency jitter and determinism loss |
+| `flash_fragmentation` | −15 | Hot functions spread across disparate Flash sectors (cache miss penalty) |
+| `autosar_utilization_warning` | −15 | Utilization above Liu & Layland RM bound |
+| `autosar_wcet_dominates` | −10 | Single task execution consumes > 50% of its period |
+| `autosar_double_risk` | −10 | Unbounded recursion combined with tight real-time deadline |
+| `autosar_heuristic_wcet` | −10 | Function not found in map/trace; WCET is an unverified guess |
+| `autosar_rm_suboptimal` | −10 | Constrained deadline ($D < T$) scheduled under RM instead of DM |
+| `no_explicit_stack_section` | −10 | Stack overflow undetectable at runtime via MPU |
+| `unaligned_dma_buffer` | −10 | D-cache maintenance data corruption |
+| `autosar_isr_flash_wcet` | −5 | ISR executed from Flash inflates WCET |
 | Positive / INFO findings | 0 | No deduction; informational / best-practice confirmation |
 
 ```
-OVERALL SCORE: max(0, 100 - sum(penalties))
+OVERALL SCORE: max(0, 100 − sum(penalties))
 ```
 
 ---
@@ -1440,9 +1399,9 @@ OVERALL SCORE: max(0, 100 - sum(penalties))
 ====================================================
  MEMORY MAP SUMMARY [STATIC]
 ====================================================
-  DTCM   : 1,024 / 65,536 bytes (1.6%)
+  DTCM   : 1,024 / 65,536 bytes  (1.6%)
   SRAM1  : 51,200 / 114,688 bytes (44.6%)
-  FLASH  : 0 / 1,048,576 bytes (0.0%)
+  FLASH  : 0 / 1,048,576 bytes   (0.0%)
   UNKNOWN: 115 bytes
 
 ====================================================
@@ -1467,7 +1426,7 @@ FINDINGS (2 total: 0 critical, 1 warnings, 1 info)
     TIM2_IRQHandler at 0x08001020 (FLASH)
       Calculated latency: ~142.86 ns (vs ~71.43 ns in ITCM/CCM)
       Cold-cache jitter risk: up to ~285.71 ns
-    Fix: Move hot ISR to zero-wait-state RAM: __attribute__((section(".ccmram")))
+    Fix: __attribute__((section(".ccmram")))
 
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ INFORMATIONAL FINDINGS (1)                                               │
@@ -1483,124 +1442,40 @@ FINDINGS (2 total: 0 critical, 1 warnings, 1 info)
 ==============================================================================
 
 EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
-  ────────────────────────────────────────────────────────────────────────────────────
-  Task                    Period µs   WCET µs      R µs      D µs   Margin µs  Verdict
-  ────────────────────────────────────────────────────────────────────────────────────
-  Task_CANTransmit           100000     34.00    235.00    100000    99765.00     PASS
-  Task_SensorAgg              20000     67.00    201.00     20000    19799.00     PASS
-  Task_MotorControl            1000    134.00    134.00      1000      866.00     PASS
-  ────────────────────────────────────────────────────────────────────────────────────
+  ──────────────────────────────────────────────────────────────────────────────
+  Task                  Period µs   WCET µs      R µs      D µs   Margin µs  Verdict
+  ──────────────────────────────────────────────────────────────────────────────
+  Task_CANTransmit         100000     34.00    235.00    100000    99765.00     PASS
+  Task_SensorAgg            20000     67.00    201.00     20000    19799.00     PASS
+  Task_MotorControl          1000    134.00    134.00      1000      866.00     PASS
+  ──────────────────────────────────────────────────────────────────────────────
   Overall: PASS [CALCULATED] — all tasks meet deadlines
-
-1. TASK → FUNCTION MAPPING
-  ──────────────────────────────────────────────────────────────────────────────────────
-  AUTOSAR Task             Entry Function             WCET (µs)    Source           Core
-  ──────────────────────────────────────────────────────────────────────────────────────
-  Task_CANTransmit         can_transmit_handler       34.00        [CALCULATED]     [Core 0]
-  Task_SensorAgg           sensor_aggregate           67.00        [CALCULATED]     [Core 0]
-  Task_MotorControl        motor_control_loop         134.00       [CALCULATED]     [Core 0]
-  ──────────────────────────────────────────────────────────────────────────────────────
 
 2. SCHEDULABILITY DASHBOARD
 
   Core 0  (3 periodic tasks):
-    [█████░░░░░░░░░░░░░░░░░░░░░░░░░░|░░░░░░░░░]  13.8%  RM bound: 78.0%  →  GUARANTEED (below RM bound)
+    [█████░░░░░░░░░░░░░░░░░░░░░░░░░░|░░░░░░░░░]  13.8%  RM bound: 78.0%  →  GUARANTEED
 
-  ● VERDICT: SCHEDULABLE  — all tasks meet their deadlines (per RTA).  [CALCULATED]
-
-3. RESPONSE TIME ANALYSIS TABLE
-  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  Task                    Core  Prio  Period µs   WCET µs  Blk µs       Source   WCRT µs  Deadline µs  Margin µs
-  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  Task_CANTransmit           0     3     100000     34.00    0.00   CALCULATED    235.00       100000   99765.00
-  Task_SensorAgg             0     2      20000     67.00    0.00   CALCULATED    201.00        20000   19799.00
-  Task_MotorControl          0     1       1000    134.00    0.00   CALCULATED    134.00         1000     866.00
-  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-4. SIMULATED EXECUTION TIMELINE (Gantt Chart)
-
-  CORE 0  |  Hyperperiod: 100000 µs  (scale: 1562.5 µs/char)
-  ────────────────────────────────────────────────────────────────────────────────────────
-  Task_MotorControl [A] ████████████████████████████████████████████████████████████████
-  Task_SensorAgg    [B] █░░░░░░░░░░░█░░░░░░░░░░░░█░░░░░░░░░░░░█░░░░░░░░░░░░█░░░░░░░░░░░░
-  Task_CANTransmit  [C] █░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-                         0       12500   25000   37500   50000   62500   75000   87500   
-
-  Legend:  █ = executing   ░ = idle   > = preemption point
-
-5. JITTER ANALYSIS
-
-  JITTER ANALYSIS  (start-time variation from ideal periodic release)
-  ────────────────────────────────────────────────────────────────────────────
-  Task                    Activations  Max Jitter µs  Mean Jitter µs Assessment
-  ────────────────────────────────────────────────────────────────────────────
-  Task_CANTransmit                  1         180.27          180.27  EXCELLENT  (<1% of period)
-  Task_MotorControl               100           0.00            0.00  EXCELLENT  (<1% of period)
-  Task_SensorAgg                    5         129.71          123.29  EXCELLENT  (<1% of period)
-  ────────────────────────────────────────────────────────────────────────────
-  NOTE: Jitter is measured against the ideal periodic release time.
-  Non-zero jitter is caused by higher-priority task preemption.
-  For sensor/control loops, high jitter degrades control stability.
-  Jitter on single-task cores reflects simulation granularity/drift, not real-world preemption delay.
-
-6. VISUAL ARTIFACTS GENERATED (MATPLOTLIB CHARTS)
-  ──────────────────────────────────────────────────────────────────────────────
-  Output     Description                      Artifact File
-  ──────────────────────────────────────────────────────────────────────────────
-  Output 1   Schedulability Dashboard         charts/schedulability_dashboard.png
-  Output 2   Gantt Schedule Timeline          charts/gantt_chart.png
-  Output 3   Response Time vs Deadline        charts/response_time_chart.png
-  Output 4   Start-Time Jitter Plot           charts/jitter_chart.png
-  ──────────────────────────────────────────────────────────────────────────────
-
-7. CONFIDENCE NOTES
-
-  All WCETs are [CALCULATED] from code-size heuristic.
-  Response times are OPTIMISTIC LOWER BOUNDS — not measured values.
-  The analysis is conservative for schedulability (real silicon may be slower).
-
-  WCET Derivation Method:
-    [CALCULATED]  Code-size heuristic: size_bytes / 2.5 bytes_per_insn × 1.15 penalty
-                  Source: Thumb-2 ISA encoding statistics + ARMv7-M pipeline model.
-                  Treat response times as OPTIMISTIC LOWER BOUNDS.
-
-    [SIMULATED]   Instruction counts from Renode functional trace.
-                  Renode does NOT model cache effects or bus arbitration.
-                  Timing is functional only — treat as APPROXIMATE.
-
-  RTA Assumptions:
-    - Single-core analysis uses configured scheduling algorithm (RM/DM/EDF).
-    - Tasks are strictly periodic with synchronous release at t=0.
-    - Inter-core communication modeled as priority ceiling blocking term.
-    - Resource dependencies utilize Priority Ceiling Protocol (PCP/SRP).
-    - ISRs treated as highest-priority periodic tasks.
-
-  For production use: measure actual WCET with on-hardware profiling
-  (e.g. Segger SystemView, TRACE32) to validate these estimates.
-========================================================================
+  ● VERDICT: SCHEDULABLE — all tasks meet their deadlines (per RTA). [CALCULATED]
 ```
 
 ---
 
 ## Renode Integration
 
-[Renode](https://renode.io/) by Antmicro is used for optional dynamic profiling. It is preferred over QEMU because:
+[Renode](https://renode.io/) is a free, open-source hardware simulation framework by Antmicro. EmbedSched can invoke Renode headlessly to capture execution traces, upgrading WCET confidence from `[CALCULATED]` to `[SIMULATED]`.
 
-- Ships pre-built `.repl` platform descriptions for STM32F4, STM32F7, and many other Cortex-M devices
-- Better peripheral model coverage (DMA, NVIC, SysTick, GPIO)
-- Built-in execution tracer that logs per-instruction PC values
-- Used in real industrial CI pipelines for pre-hardware firmware validation
+```bash
+python main.py \
+  --elf          firmware.elf \
+  --map          firmware.map \
+  --ld           linker.ld \
+  --chip         chips/stm32f746.yaml \
+  --renode-repl  platform/stm32f746.repl \
+  --renode-sim-ms 2000
+```
 
-### What Renode provides
-
-| Data | Accuracy |
-|---|---|
-| Call counts per function | Accurate (functional simulation is exact) |
-| Relative execution time | Approximate (no cache, bus, or pipeline modeling for most STM32 platforms) |
-
-### Honest limitation
-
-> Simulated execution (Renode) provides accurate call counts and control flow but does **not** model cache effects, bus arbitration stalls, or pipeline hazards. Timing figures from simulation are functional approximations only. All timing penalty estimates are `[CALCULATED]` from datasheet formulas, not from simulation.
+> **Limitation:** Renode provides accurate call counts and control flow but does **not** model cache effects, bus arbitration stalls, or pipeline hazards. Timing figures from simulation are functional approximations only. All timing penalty estimates are `[CALCULATED]` from datasheet formulas, not from simulation.
 
 ---
 
@@ -1608,13 +1483,13 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
 
 ### What This Tool Is Not
 
-- **Not a formal WCET verifier.** The `[CALCULATED]` WCET is an optimistic lower bound derived from code size and chip timing models. It cannot replace measured WCET from on-hardware profiling tools like Segger SystemView or TRACE32.
+- **Not a formal WCET verifier.** The `[CALCULATED]` WCET is an optimistic lower bound derived from code size and chip timing models. It cannot replace measured WCET from on-hardware profiling tools such as Segger SystemView or TRACE32.
 
-- **Not a replacement for aiT or TA Tool Suite.** Those tools provide sound WCET bounds via abstract interpretation. This tool provides screening-level estimates for pre-hardware development phases.
+- **Not a replacement for aiT or TA Tool Suite.** Those tools provide sound WCET bounds via abstract interpretation. EmbedSched provides screening-level estimates for pre-hardware development phases.
 
-- **Not sound for safety certification.** Do not use `[CALCULATED]` WCETs as evidence in an ISO 26262 safety case without hardware validation.
+- **Not sufficient for safety certification alone.** Do not use `[CALCULATED]` WCETs as sole evidence in an ISO 26262 or IEC 61508 safety case without hardware validation.
 
-**What it is:** A CI-compatible pre-hardware screening tool that catches gross timing violations, memory placement errors, and configuration bugs before hardware is available — and flags exactly how confident each finding is.
+**What it is:** A CI-compatible pre-hardware screening tool that catches gross timing violations, memory placement errors, and configuration bugs before hardware is available — with explicit confidence tags on every finding.
 
 ---
 
@@ -1623,33 +1498,37 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
 | Limitation | Impact | How Reported |
 |---|---|---|
 | No real hardware | Timing figures are calculated, not measured | Every timing figure tagged `[CALCULATED]` with source citation |
-| Renode doesn't model cache | Simulated cycle counts ≠ real silicon timing | Renode findings tagged `[SIMULATED]` with explicit caveat |
-| `-fstack-usage` can't bound recursion | Stack depth undercountable for recursive code | Recursion flagged as `[STATIC]` unbounded finding |
-| DMA buffer detection is heuristic | May miss buffers with unusual names | Tagged `[HEURISTIC]`; user should audit manually |
-| Static call graph misses function pointers | Callbacks, vtables break graph | Functions with indirect calls flagged as "call graph may be incomplete" |
-| Single MCU frequency assumed | User may run at lower clock | `--freq-mhz` accepted; defaults to chip maximum (conservative) |
-| Veneer symbols filtered | Linker-generated trampolines excluded | Filtered automatically, logged if verbose mode enabled |
-| Non-harmonic hyperperiod explosion | High-LCM task sets cause simulation blowup | Capped at 200ms; representative 30ms window rendered while RTA guarantees verdict |
-| Periodic task release model | Sporadic tasks must be modeled via minimum inter-arrival time | Schedulability assumes synchronous $t=0$ release |
-| Code-size WCET heuristic | Does not model data-dependent loops | Tagged `[CALCULATED]` (optimistic lower bound); use Renode trace for higher confidence |
+| Renode does not model cache | Simulated cycle counts ≠ real silicon timing | Renode findings tagged `[SIMULATED]` with explicit caveat |
+| `-fstack-usage` cannot bound recursion | Stack depth undercountable for recursive code | Recursion flagged as `[STATIC]` unbounded finding |
+| DMA buffer detection is heuristic | May miss buffers with unusual naming conventions | Tagged `[HEURISTIC]`; audit manually |
+| Static call graph misses function pointers | Callbacks, vtables, and HAL dispatch tables break graph | Functions with indirect calls flagged as potentially incomplete |
+| Single MCU frequency assumed | User may run at a lower clock speed | `--freq-mhz` accepted; defaults to chip maximum (conservative) |
+| Veneer symbols filtered | Linker-generated trampolines excluded from analysis | Filtered automatically |
+| Non-harmonic hyperperiod explosion | High-LCM task sets cause simulation blowup | Capped at 200 ms; representative 30 ms window rendered; RTA provides schedulability verdict |
+| Periodic task release model | Sporadic tasks must be modeled via minimum inter-arrival time | Schedulability assumes synchronous $t = 0$ release |
+| Code-size WCET heuristic | Does not model data-dependent loops or branch mispredictions | Tagged `[CALCULATED]` (optimistic lower bound); use Renode trace for higher confidence |
 
----
-
-## License
-
-[MIT License](LICENSE)
+> **Function pointer mitigation:** Compile with `-flto -fwhole-program -fdevirtualize`. GCC/Clang's LTO pass resolves many indirect calls to direct calls when the whole program is visible. After LTO, re-run objdump — many `BLX Rn` instructions are replaced with `BL symbol`, making them directly visible to the call graph extractor. This significantly reduces the function-pointer blind spot in the call graph, particularly for HAL callback tables.
 
 ---
 
 ## Contributing
 
-Contributions are welcome. To add support for a new MCU:
+Contributions are welcome.
+
+**To add support for a new MCU:**
 1. Add a chip YAML in `chips/` following the [YAML Schema](#yaml-schema).
 2. Test against a real firmware `.map` and `.ld` for that target.
 3. Open a pull request with the YAML and a sample test case.
 
-To add a new analysis rule:
+**To add a new analysis rule:**
 1. Create `analysis/rules/<rule_name>.py`.
 2. Implement `check_<rule_name>(...) → List[Finding]`.
-3. Add the rule call in `main.py`.
-4. Add the rule's penalty weight in `report/terminal_report.py → WEIGHTS`.
+3. Register the rule call in `main.py`.
+4. Add the rule's penalty weight in `report/terminal_report.py` → `WEIGHTS`.
+
+---
+
+## License
+
+[MIT License](LICENSE) © 2026 Yashwanth M

@@ -28,7 +28,15 @@ def _get_bus_latency(region_name: str, chip_regions: dict) -> float:
     ws = region.get('wait_states', 0)
     return (1 + ws) * 0.01
 
-def run_rta(tasks: List[AutosarTask], cores: Dict[int, CoreConfig] = None, resources: List[Resource] = None, channels: List[InterCoreChannel] = None, chip_regions: dict = None, chip_profile: dict = None) -> None:
+def run_rta(
+    tasks: List[AutosarTask],
+    cores: Dict[int, CoreConfig] = None,
+    resources: List[Resource] = None,
+    channels: List[InterCoreChannel] = None,
+    chip_regions: dict = None,
+    chip_profile: dict = None,
+    autosar_priority: bool = False,
+) -> None:
     if cores is None: cores = {}
     if resources is None: resources = []
     if channels is None: channels = []
@@ -73,27 +81,35 @@ def run_rta(tasks: List[AutosarTask], cores: Dict[int, CoreConfig] = None, resou
 
         total_lat = lat + spin_lat
         ch.latency_us = total_lat
-        channel_latency[ch.to_task] = channel_latency.get(ch.to_task, 0) + total_lat
+        access_count = getattr(ch, 'access_count', 1) or 1
+        channel_latency[ch.to_task] = channel_latency.get(ch.to_task, 0) + access_count * total_lat
 
-    # Compute PCP ceilings (lower integer = higher priority)
+    # Compute PCP ceilings
+    # Standard: lower integer = higher priority (ceiling = min, blocks if ceiling <= task.priority)
+    # AUTOSAR: higher integer = higher priority (ceiling = max, blocks if ceiling >= task.priority)
     res_map = {r.name: r for r in resources}
-    # Initialize ceilings to infinity
     for r in resources:
-        r.ceiling = float('inf')
-        
+        r.ceiling = -float('inf') if autosar_priority else float('inf')
+
     for t in tasks:
         for r_name in t.resources:
             if r_name in res_map:
-                res_map[r_name].ceiling = min(res_map[r_name].ceiling, t.priority)
+                if autosar_priority:
+                    res_map[r_name].ceiling = max(res_map[r_name].ceiling, t.priority)
+                else:
+                    res_map[r_name].ceiling = min(res_map[r_name].ceiling, t.priority)
 
     core_tasks = _group_by_core(tasks)
-    
+
     for core_id, c_tasks in core_tasks.items():
         config = cores.get(core_id, CoreConfig(id=core_id, algorithm="RM"))
-        ordered = sorted(c_tasks, key=lambda t: t.priority)
-        
+        # Highest-priority tasks appear first in ordered list:
+        # Standard: ascending order (1, 2, 3...)
+        # AUTOSAR: descending order (10, 9, 8...)
+        ordered = sorted(c_tasks, key=lambda t: -t.priority if autosar_priority else t.priority)
+
         if config.algorithm in ("RM", "DM", "FPP"):
-            _run_fixed_priority_rta(ordered, res_map, channel_latency)
+            _run_fixed_priority_rta(ordered, res_map, channel_latency, autosar_priority=autosar_priority)
         elif config.algorithm == "EDF":
             _run_edf_analysis(ordered, channel_latency)
 
@@ -113,6 +129,10 @@ def compute_utilization(tasks: List[AutosarTask], cores: Dict[int, CoreConfig] =
         if n == 0:
             result[core_id] = {
                 'utilization': 0.0,
+                'u_task':      0.0,
+                'u_isr':       0.0,
+                'u_idle':      1.0,
+                'u_busy':      0.0,
                 'task_count':  0,
                 'bound':       bound,
                 'rm_bound':    bound,
@@ -124,7 +144,10 @@ def compute_utilization(tasks: List[AutosarTask], cores: Dict[int, CoreConfig] =
             }
             continue
 
-        U = sum(t.wcet_us / t.period_us for t in periodic)
+        u_task = sum(t.wcet_us / t.period_us for t in periodic if not getattr(t, 'is_isr', False))
+        u_isr = sum(t.wcet_us / t.period_us for t in periodic if getattr(t, 'is_isr', False))
+        U = u_task + u_isr
+        u_idle = max(0.0, 1.0 - U)
         constrained = any(t.deadline_us < t.period_us for t in periodic)
 
         pda_passed = None
@@ -135,12 +158,21 @@ def compute_utilization(tasks: List[AutosarTask], cores: Dict[int, CoreConfig] =
             tightest_L = min((t.pda_tightest_L for t in periodic if getattr(t, 'pda_tightest_L', None) is not None), default=None)
             tightest_margin = min((t.pda_tightest_margin for t in periodic if getattr(t, 'pda_tightest_margin', None) is not None), default=None)
 
+        # Under constrained deadlines (D_i < T_i), Liu & Layland bound is NOT sufficient;
+        # schedulability must be derived from exact RTA / PDA tests.
+        sched_by_util = (U <= bound) if not constrained else None
+
         result[core_id] = {
             'utilization': U,
+            'u_task':      u_task,
+            'u_isr':       u_isr,
+            'u_idle':      u_idle,
+            'u_busy':      U,
             'task_count':  n,
             'bound':       bound,
             'rm_bound':    bound,
-            'schedulable_by_utilization': U <= bound,
+            'schedulable_by_utilization': sched_by_util,
+            'is_utilization_bound_sufficient': not constrained,
             'algorithm': config.algorithm,
             'is_edf': is_edf,
             'has_constrained_deadline': constrained,
@@ -162,7 +194,12 @@ def _group_by_core(tasks: List[AutosarTask]) -> Dict[int, List[AutosarTask]]:
     return cores
 
 
-def _run_fixed_priority_rta(ordered: List[AutosarTask], res_map: Dict[str, Resource], channel_latency: Dict[str, float]) -> None:
+def _run_fixed_priority_rta(
+    ordered: List[AutosarTask],
+    res_map: Dict[str, Resource],
+    channel_latency: Dict[str, float],
+    autosar_priority: bool = False,
+) -> None:
     for i, task in enumerate(ordered):
         if task.deadline_us <= 0:
             task.wcrt_us    = 0.0
@@ -183,15 +220,17 @@ def _run_fixed_priority_rta(ordered: List[AutosarTask], res_map: Dict[str, Resou
         lower_priority_tasks = ordered[i+1:]
         for lp_task in lower_priority_tasks:
             for r_name in lp_task.resources:
-                if r_name in res_map and res_map[r_name].ceiling <= task.priority:
-                    res_obj = res_map[r_name]
-                    cs_duration = res_obj.critical_section_us
-                    if getattr(res_obj, 'task_critical_sections_us', None) and lp_task.name in res_obj.task_critical_sections_us:
-                        cs_duration = res_obj.task_critical_sections_us[lp_task.name]
-                    if cs_duration > B_i:
-                        B_i = cs_duration
-                        blocking_source_task = lp_task.name
-                        blocking_source_res = r_name
+                if r_name in res_map:
+                    blocks = (res_map[r_name].ceiling >= task.priority) if autosar_priority else (res_map[r_name].ceiling <= task.priority)
+                    if blocks:
+                        res_obj = res_map[r_name]
+                        cs_duration = res_obj.critical_section_us
+                        if getattr(res_obj, 'task_critical_sections_us', None) and lp_task.name in res_obj.task_critical_sections_us:
+                            cs_duration = res_obj.task_critical_sections_us[lp_task.name]
+                        if cs_duration > B_i:
+                            B_i = cs_duration
+                            blocking_source_task = lp_task.name
+                            blocking_source_res = r_name
         
         # Add inter-core communication blocking
         B_i += channel_latency.get(task.name, 0.0)
@@ -200,31 +239,57 @@ def _run_fixed_priority_rta(ordered: List[AutosarTask], res_map: Dict[str, Resou
         task.blocking_source_res = blocking_source_res
 
         hp_tasks = [t for t in ordered[:i] if t.period_us > 0 and t.wcet_us > 0]
-        R = task.wcet_us + B_i
-        
-        converged = False
-        for _ in range(MAX_ITERATIONS):
-            interference = sum(math.ceil(round(R, 6) / hp.period_us) * hp.wcet_us for hp in hp_tasks)
-            R_new = task.wcet_us + B_i + interference
 
-            if R_new > task.deadline_us:
-                R = R_new
-                converged = True  # Deadline miss proven
-                break
-            if abs(R_new - R) < 1e-9:
-                R = R_new
-                converged = True
-                break
-            R = R_new
+        # Multi-activation level-i busy period analysis (Lehoczky / Tindell).
+        # For implicit deadlines (D == T), instance q=0 is proven sufficient.
+        # For constrained deadlines (D < T), evaluate consecutive activations q = 0, 1, 2...
+        # until instance q finishes before instance q+1 arrives (w_q <= (q+1)*T_i).
+        max_R = 0.0
+        all_instances_converged = True
+        q = 0
+        MAX_Q = 50  # Upper bound on busy period activations to prevent runaway
 
-        task.wcrt_us = R
-        if not converged:
-            print(f"[RTA] Warning: task '{task.name}' did not converge in {MAX_ITERATIONS} iterations.", file=sys.stderr)
+        while q < MAX_Q:
+            w = (q + 1) * task.wcet_us + B_i
+            instance_converged = False
+            for _ in range(MAX_ITERATIONS):
+                interference = sum(math.ceil(round(w, 6) / hp.period_us) * hp.wcet_us for hp in hp_tasks)
+                w_new = (q + 1) * task.wcet_us + B_i + interference
+                if abs(w_new - w) < 1e-9:
+                    w = w_new
+                    instance_converged = True
+                    break
+                w = w_new
+                if (w - q * task.period_us) > task.deadline_us:
+                    # Deadline miss proven for instance q
+                    instance_converged = True
+                    break
+
+            if not instance_converged:
+                all_instances_converged = False
+                print(f"[RTA] Warning: task '{task.name}' instance {q} did not converge in {MAX_ITERATIONS} iterations.", file=sys.stderr)
+
+            R_q = w - q * task.period_us
+            if R_q > max_R:
+                max_R = R_q
+
+            # If deadline missed, no need to check further activations
+            if R_q > task.deadline_us:
+                break
+
+            # End of busy period check: instance q finishes before instance q+1 arrives
+            if w <= (q + 1) * task.period_us:
+                break
+
+            q += 1
+
+        task.wcrt_us = max_R
+        if not all_instances_converged:
             task.schedulable = None
-            task.margin_us = task.deadline_us - R
+            task.margin_us = task.deadline_us - max_R
         else:
-            task.schedulable = R <= task.deadline_us
-            task.margin_us  = task.deadline_us - R
+            task.schedulable = max_R <= task.deadline_us
+            task.margin_us = task.deadline_us - max_R
 
 def _run_edf_analysis(tasks: List[AutosarTask], channel_latency: Dict[str, float]) -> None:
     import math

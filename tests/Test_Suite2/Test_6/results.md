@@ -1,6 +1,7 @@
 
 [AUTOSAR] Loading task configuration...
-[AUTOSAR] Extracting WCETs from firmware artifacts...
+[AUTOSAR] Extracting WCETs from firmware artifacts via IPET...
+[AUTOSAR] Priority ordering mode: Standard (lower number = higher priority)
 [AUTOSAR] Running Response Time Analysis (RTA)...
 [AUTOSAR] Running discrete-event scheduler simulation...
 [AUTOSAR] Generating matplotlib charts in charts...
@@ -23,20 +24,20 @@ OVERALL SCORE: 95 / 100
 FINDINGS (4 total: 0 critical, 1 warnings, 3 info)
 --------------------------------------------------
 
-┌──────────────────────────────────────────────────────────────────────────┐
-│ CRITICAL FINDINGS (0) - None Detected                                    │
-└──────────────────────────────────────────────────────────────────────────┘
-┌──────────────────────────────────────────────────────────────────────────┐
-│ WARNING FINDINGS (1) - REVIEW RECOMMENDED                                │
-└──────────────────────────────────────────────────────────────────────────┘
++--------------------------------------------------------------------------+
+| CRITICAL FINDINGS (0) - None Detected                                    |
++--------------------------------------------------------------------------+
++--------------------------------------------------------------------------+
+| WARNING FINDINGS (1) - REVIEW RECOMMENDED                                |
++--------------------------------------------------------------------------+
 
   [WARNING] [CALCULATED] autosar_isr_flash_wcet
     adc_dma_isr in FLASH, 4 wait states inflating WCET. Recovery: 19.2µs → becomes ~1.1µs with ITCM (but STM32F407 has no ITCM, so ART accelerator suggestion instead). [CALCULATED]
     Fix: Set FLASH->ACR |= FLASH_ACR_ARTEN | FLASH_ACR_PRFTEN in SystemInit() to mitigate wait states.
 
-┌──────────────────────────────────────────────────────────────────────────┐
-│ INFORMATIONAL FINDINGS (3)                                               │
-└──────────────────────────────────────────────────────────────────────────┘
++--------------------------------------------------------------------------+
+| INFORMATIONAL FINDINGS (3)                                               |
++--------------------------------------------------------------------------+
 
   [INFO] [STATIC] explicit_stack_found
     Explicit stack reservation found.
@@ -63,45 +64,47 @@ FINDINGS (4 total: 0 critical, 1 warnings, 3 info)
 
 ==============================================================================
  AUTOSAR SCHEDULABILITY ANALYSIS
+ Priority Convention: Standard Real-Time (Lower numerical value = Higher priority)
 ==============================================================================
 
 EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
   ────────────────────────────────────────────────────────────────────────────────────
   Task                    Period µs   WCET µs      R µs      D µs   Margin µs  Verdict
   ────────────────────────────────────────────────────────────────────────────────────
-  Task_CANTransmit           100000     20.00    141.33    100000    99858.67     PASS
-  Task_SensorAgg              20000     40.00    121.33     20000    19878.67     PASS
-  Task_MotorControl            1000     80.00     81.33      1000      918.67     PASS
-  Task_ISR_ADC                 1000      1.33      1.33      1000      998.67     PASS
+  Task_ISR_ADC                 1000      0.74      0.74      1000      999.26     PASS
+  Task_MotorControl            1000    141.00    141.74      1000      858.26     PASS
+  Task_SensorAgg              20000     71.00    212.74     20000    19787.26     PASS
+  Task_CANTransmit           100000     35.00    247.74    100000    99752.26     PASS
   ────────────────────────────────────────────────────────────────────────────────────
-  Overall: PASS [CALCULATED] — all tasks meet deadlines
+  Overall: PASS [IPET] — all tasks meet deadlines
 
 
 1. TASK → FUNCTION MAPPING
   ──────────────────────────────────────────────────────────────────────────────────────
   AUTOSAR Task             Entry Function             WCET (µs)    Source           Core
   ──────────────────────────────────────────────────────────────────────────────────────
-  Task_CANTransmit         can_transmit_handler       20.00        [CALCULATED]     [Core 0]
-  Task_SensorAgg           sensor_aggregate           40.00        [CALCULATED]     [Core 0]
-  Task_MotorControl        motor_control_loop         80.00        [CALCULATED]     [Core 0]
-  Task_ISR_ADC             adc_dma_isr                1.33         [CALCULATED]     [ISR]
+  Task_ISR_ADC             adc_dma_isr                0.74         [IPET]           [ISR]
+  Task_MotorControl        motor_control_loop         141.00       [IPET]           [Core 0]
+  Task_SensorAgg           sensor_aggregate           71.00        [IPET]           [Core 0]
+  Task_CANTransmit         can_transmit_handler       35.00        [IPET]           [Core 0]
   ──────────────────────────────────────────────────────────────────────────────────────
 
 2. SCHEDULABILITY DASHBOARD
 
   Core 0  (4 periodic tasks):
-    [███░░░░░░░░░░░░░░░░░░░░░░░░░░░|░░░░░░░░░░]  8.4%  RM bound: 75.7%  →  GUARANTEED (below RM bound)
+    [█████░░░░░░░░░░░░░░░░░░░░░░░░░|░░░░░░░░░░]  14.6%  RM bound: 75.7%  →  GUARANTEED (below RM bound)
+    Duty breakdown: Tasks 14.5% | ISRs 0.1% | Idle 85.4%
 
-  ● VERDICT: SCHEDULABLE  — all tasks meet their deadlines (per RTA).  [CALCULATED]
+  ● VERDICT: SCHEDULABLE  — all tasks meet their deadlines (per RTA).  [IPET]
 
 3. RESPONSE TIME ANALYSIS TABLE
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
   Task                    Core  Prio  Period µs   WCET µs  Blk µs       Source   WCRT µs  Deadline µs  Margin µs
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  Task_CANTransmit           0     3     100000     20.00    0.00   CALCULATED    141.33       100000   99858.67
-  Task_SensorAgg             0     2      20000     40.00    0.00   CALCULATED    121.33        20000   19878.67
-  Task_MotorControl          0     1       1000     80.00    0.00   CALCULATED     81.33         1000     918.67
-  Task_ISR_ADC               0     0       1000      1.33    0.00   CALCULATED      1.33         1000     998.67
+  Task_ISR_ADC               0     0       1000      0.74    0.00         IPET      0.74         1000     999.26
+  Task_MotorControl          0     1       1000    141.00    0.00         IPET    141.74         1000     858.26
+  Task_SensorAgg             0     2      20000     71.00    0.00         IPET    212.74        20000   19787.26
+  Task_CANTransmit           0     3     100000     35.00    0.00         IPET    247.74       100000   99752.26
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 4. SIMULATED EXECUTION TIMELINE (Gantt Chart)
@@ -130,10 +133,10 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
   ────────────────────────────────────────────────────────────────────────────
   Task                    Activations  Max Jitter µs  Mean Jitter µs Assessment
   ────────────────────────────────────────────────────────────────────────────
-  Task_CANTransmit                  1         108.63          108.63  EXCELLENT  (<1% of period)
-  Task_ISR_ADC                    100           0.00            0.00  EXCELLENT  (<1% of period)
-  Task_MotorControl               100           1.33            1.23  EXCELLENT  (<1% of period)
-  Task_SensorAgg                    5          81.19           75.09  EXCELLENT  (<1% of period)
+  Task_CANTransmit                  1         187.05          187.05  EXCELLENT (<1% of period)
+  Task_ISR_ADC                    100           0.00            0.00  EXCELLENT (<1% of period)
+  Task_MotorControl               100           0.74            0.68  EXCELLENT (<1% of period)
+  Task_SensorAgg                    5         141.29          131.36  EXCELLENT (<1% of period)
   ────────────────────────────────────────────────────────────────────────────
   NOTE: Jitter is measured against the ideal periodic release time.
   Non-zero jitter is caused by higher-priority task preemption.
@@ -152,18 +155,17 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
 
 7. CONFIDENCE NOTES
 
-  All WCETs are [CALCULATED] from code-size heuristic.
-  Response times are OPTIMISTIC LOWER BOUNDS — not measured values.
-  The analysis is conservative for schedulability (real silicon may be slower).
+  HIGH CONFIDENCE: [IPET]
+  All WCETs mathematically proven via Implicit Path Enumeration Technique (IPET).
+  Pipeline stalls, taken branch flushes, and Flash prefetch buffer misses fully modeled.
 
   WCET Derivation Method:
-    [CALCULATED]  Code-size heuristic: size_bytes / 2.5 bytes_per_insn × 1.15 penalty
-                  Source: Thumb-2 ISA encoding statistics + ARMv7-M pipeline model.
-                  Treat response times as OPTIMISTIC LOWER BOUNDS.
-
-    [SIMULATED]   Instruction counts from Renode functional trace.
-                  Renode does NOT model cache effects or bus arbitration.
-                  Timing is functional only — treat as APPROXIMATE.
+    [IPET]              Implicit Path Enumeration Technique (microarchitecturally proven).
+                        Models pipeline hazards, branch flushes, and 128-bit Flash prefetch.
+    [IPET-ANNOTATED]    IPET with user-annotated loop bound overrides from schedule.json.
+    [IPET-CONSERVATIVE] IPET using conservative fallback (--max-loop-bound) for unbounded loops.
+    [CALCULATED]        Code-size heuristic (fallback when no disassembly or ELF available).
+    [SIMULATED]         Instruction counts from Renode functional trace (approximate).
 
   RTA Assumptions:
     - Single-core analysis uses configured scheduling algorithm (RM/DM/EDF).

@@ -76,16 +76,19 @@ def generate_markdown_report(
     if autosar_data:
         md.append("## 3. AUTOSAR Schedulability & Response Time Analysis\n")
         md.append(f"**Verdict:** {autosar_data.get('verdict', 'N/A')}  \n")
+        if 'priority_order' in autosar_data:
+            md.append(f"**Priority Ordering:** `{autosar_data['priority_order']}`  \n")
         
         tasks = autosar_data.get('tasks', [])
         if tasks:
-            md.append("| Task Name | Core | Priority | Period (µs) | WCET (µs) | Blocking (µs) | WCRT (µs) | Deadline (µs) | Schedulable? |")
-            md.append("| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |")
+            md.append("| Task Name | Core | Priority | Period (µs) | WCET (µs) | Confidence | Blocking (µs) | WCRT (µs) | Deadline (µs) | Schedulable? |")
+            md.append("| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |")
             for t in tasks:
                 sched = "✅ YES" if t.get('schedulable', True) else "❌ NO"
+                tag = t.get('tag', '[IPET]')
                 md.append(
                     f"| `{t.get('name')}` | {t.get('core', 0)} | {t.get('priority')} | "
-                    f"`{t.get('period')}` | `{t.get('wcet')}` | `{t.get('blocking', 0)}` | "
+                    f"`{t.get('period')}` | `{t.get('wcet')}` | `{tag}` | `{t.get('blocking', 0)}` | "
                     f"`{t.get('wcrt')}` | `{t.get('deadline')}` | {sched} |"
                 )
             md.append("")

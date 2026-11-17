@@ -51,6 +51,8 @@ class AutosarConfig:
     resources: List[Resource]
     inter_core_channels: List[InterCoreChannel]
     scheduler_config: dict
+    loop_bounds: dict = None
+    priority_order: str = "standard"
 
 def parse_autosar_config(path: str) -> AutosarConfig:
     """
@@ -62,7 +64,8 @@ def parse_autosar_config(path: str) -> AutosarConfig:
             tasks=tasks, isrs=isrs,
             cores={0: CoreConfig(id=0, algorithm="RM")},
             resources=[], inter_core_channels=[],
-            scheduler_config={"algorithm": "RM", "preemptive": True, "resource_protocol": "PCP"}
+            scheduler_config={"algorithm": "RM", "preemptive": True, "resource_protocol": "PCP"},
+            loop_bounds={}
         )
     else:
         return _parse_json(path)
@@ -193,13 +196,21 @@ def _parse_json(path: str) -> AutosarConfig:
             is_isr=True,
         ))
 
+    # 7. Parse User Loop Bounds (optional)
+    loop_bounds = data.get('loop_bounds', {})
+
+    # 8. Parse Priority Ordering Convention (optional: "standard" or "autosar")
+    priority_order = data.get('priority_order') or sched_cfg.get('priority_order', 'standard')
+
     return AutosarConfig(
         tasks=tasks,
         isrs=isr_tasks,
         cores=cores,
         resources=resources,
         inter_core_channels=channels,
-        scheduler_config=sched_cfg
+        scheduler_config=sched_cfg,
+        loop_bounds=loop_bounds,
+        priority_order=priority_order,
     )
 
 def _require_fields(obj: dict, fields: list, path: str):

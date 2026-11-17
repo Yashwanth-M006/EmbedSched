@@ -1,6 +1,7 @@
 
 [AUTOSAR] Loading task configuration...
-[AUTOSAR] Extracting WCETs from firmware artifacts...
+[AUTOSAR] Extracting WCETs from firmware artifacts via IPET...
+[AUTOSAR] Priority ordering mode: Standard (lower number = higher priority)
 [AUTOSAR] Running Response Time Analysis (RTA)...
 [AUTOSAR] Running discrete-event scheduler simulation...
 [AUTOSAR] Generating matplotlib charts in charts...
@@ -16,22 +17,71 @@
  FIRMWARE EFFICIENCY REPORT
 ====================================================
 
-OVERALL SCORE: 100 / 100
-  Deductions: explicit_stack_found (-0), autosar_edf_priority_null (-0), autosar_edf_constrained_deadline (-0)
+OVERALL SCORE: 0 / 100
+  Deductions: explicit_stack_found (-0), autosar_deadline_miss (-30), autosar_deadline_miss (-30), autosar_cpu_overload (-25), autosar_wcet_dominates (-10), autosar_wcet_dominates (-10), autosar_edf_priority_null (-0), autosar_edf_constrained_deadline (-0)
 
 --------------------------------------------------
-FINDINGS (3 total: 0 critical, 0 warnings, 3 info)
+FINDINGS (8 total: 4 critical, 2 warnings, 2 info)
 --------------------------------------------------
 
-┌──────────────────────────────────────────────────────────────────────────┐
-│ CRITICAL FINDINGS (0) - None Detected                                    │
-└──────────────────────────────────────────────────────────────────────────┘
-┌──────────────────────────────────────────────────────────────────────────┐
-│ WARNING FINDINGS (0) - None Detected                                     │
-└──────────────────────────────────────────────────────────────────────────┘
-┌──────────────────────────────────────────────────────────────────────────┐
-│ INFORMATIONAL FINDINGS (3)                                               │
-└──────────────────────────────────────────────────────────────────────────┘
++--------------------------------------------------------------------------+
+| CRITICAL FINDINGS (4) - ACTION REQUIRED                                  |
++--------------------------------------------------------------------------+
+
+  [CRITICAL] [RTA/[IPET]] autosar_deadline_miss
+    Task 'tau1' MISSES its deadline.
+      Function mapped  : task1
+      WCET             : 3533.00 µs  [IPET]
+      Deadline         : 5000 µs
+      Worst-case resp. : 9562.00 µs
+      Overrun          : +4562.00 µs
+      Call chain       : task1
+      NOTE: WCET is [IPET] — treat response time as functional estimate.
+    Fix: Raise priority, shorten period, reduce WCET by moving hot functions to ITCM, or offload work to a lower-priority task.
+
+  [CRITICAL] [RTA/[IPET]] autosar_deadline_miss
+    Task 'tau2' MISSES its deadline.
+      Function mapped  : task2
+      WCET             : 5299.00 µs  [IPET]
+      Deadline         : 7000 µs
+      Worst-case resp. : 14759.00 µs
+      Overrun          : +7759.00 µs
+      Call chain       : task2
+      NOTE: WCET is [IPET] — treat response time as functional estimate.
+    Fix: Raise priority, shorten period, reduce WCET by moving hot functions to ITCM, or offload work to a lower-priority task.
+
+  [CRITICAL] [CALCULATED] autosar_cpu_overload
+    Core 0: CPU OVERLOADED.
+      Utilization : 111.9% > 100%
+      Tasks       : 2
+      System cannot be schedulable under any priority assignment.
+    Fix: Reduce WCET of dominant tasks, increase task periods, or offload tasks to another core.
+
+  [CRITICAL] [EDF] autosar_edf_constrained_deadline
+    EDF Processor Demand Analysis: FAILED at L=7000.0µs (demand h(7000.0) > 7000.0µs).
+    Fix: Use processor demand analysis (PDA) for precise EDF schedulability.
+
++--------------------------------------------------------------------------+
+| WARNING FINDINGS (2) - REVIEW RECOMMENDED                                |
++--------------------------------------------------------------------------+
+
+  [WARNING] [IPET] autosar_wcet_dominates
+    Task 'tau1': WCET dominates its period.
+      WCET / Period = 3533.00 / 6000 µs = 59%
+      Leaves only 41% of the period for other tasks.
+      Function: task1  [IPET]
+    Fix: Split task body into pre-emption points, move expensive computation to a lower-priority helper task, or increase the period.
+
+  [WARNING] [IPET] autosar_wcet_dominates
+    Task 'tau2': WCET dominates its period.
+      WCET / Period = 5299.00 / 10000 µs = 53%
+      Leaves only 47% of the period for other tasks.
+      Function: task2  [IPET]
+    Fix: Split task body into pre-emption points, move expensive computation to a lower-priority helper task, or increase the period.
+
++--------------------------------------------------------------------------+
+| INFORMATIONAL FINDINGS (2)                                               |
++--------------------------------------------------------------------------+
 
   [INFO] [STATIC] explicit_stack_found
     Explicit stack reservation found.
@@ -42,50 +92,46 @@ FINDINGS (3 total: 0 critical, 0 warnings, 3 info)
     EDF tasks must have priority=null — priority field ignored for EDF cores
     Fix: Ensure tasks on EDF cores omit the priority field or set priority=null.
 
-  [INFO] [EDF] autosar_edf_constrained_deadline
-    Tasks (tau1, tau2) have constrained deadlines (D < T) — processor demand analysis used instead of simple utilization check.
-      Checked all scheduling points up to hyperperiod.
-      Tightest margin found at L=7000.0µs.
-    Fix: Use processor demand analysis (PDA) for precise EDF schedulability.
-
 
 ====================================================
 
 ==============================================================================
  AUTOSAR SCHEDULABILITY ANALYSIS
+ Priority Convention: Standard Real-Time (Lower numerical value = Higher priority)
 ==============================================================================
 
 EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
   ────────────────────────────────────────────────────────────────────────────────────
   Task                    Period µs   WCET µs      R µs      D µs   Margin µs  Verdict
   ────────────────────────────────────────────────────────────────────────────────────
-  tau2                        10000   3000.00   5000.00      7000     2000.00     PASS
-  tau1                         6000   2000.00   2000.00      5000     3000.00     PASS
+  tau1                         6000   3533.00   9562.00      5000    -4562.00     MISS
+  tau2                        10000   5299.00  14759.00      7000    -7759.00     MISS
   ────────────────────────────────────────────────────────────────────────────────────
-  Overall: PASS [CALCULATED] — all tasks meet deadlines
+  Overall: FAIL [IPET] — deadline miss detected
 
 
 1. TASK → FUNCTION MAPPING
   ──────────────────────────────────────────────────────────────────────────────────────
   AUTOSAR Task             Entry Function             WCET (µs)    Source           Core
   ──────────────────────────────────────────────────────────────────────────────────────
-  tau2                     task2                      3000.00      [CALCULATED]     [Core 0]
-  tau1                     task1                      2000.00      [CALCULATED]     [Core 0]
+  tau1                     task1                      3533.00      [IPET]           [Core 0]
+  tau2                     task2                      5299.00      [IPET]           [Core 0]
   ──────────────────────────────────────────────────────────────────────────────────────
 
 2. SCHEDULABILITY DASHBOARD
 
   Core 0  (2 periodic tasks):
-    [█████████████████████████░░░░░░░░░░░░░░|░]  63.3%  EDF bound: 100.0% (constrained deadline)  →  GUARANTEED (demand analysis: h(t) <= t)
+    [███████████████████████████████████████|█]  111.9%  EDF bound: 100.0% (constrained deadline)  →  DEADLINE MISS (demand analysis: h(t) > t)
+    Duty breakdown: Tasks 111.9% | ISRs 0.0% | Idle 0.0%
 
-  ● VERDICT: SCHEDULABLE  — all tasks meet their deadlines (per RTA).  [CALCULATED]
+  ● VERDICT: NOT SCHEDULABLE  — deadline miss(es) detected by RTA.  [IPET]
 
 3. RESPONSE TIME ANALYSIS TABLE
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
   Task                    Core  Prio  Period µs   WCET µs  Blk µs       Source   WCRT µs  Deadline µs  Margin µs
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  tau1                       0   EDF       6000   2000.00    0.00   CALCULATED   2000.00         5000    3000.00
-  tau2                       0   EDF      10000   3000.00    0.00   CALCULATED   5000.00         7000    2000.00
+  tau1                       0   EDF       6000   3533.00    0.00         IPET   9562.00         5000   -4562.00
+  tau2                       0   EDF      10000   5299.00    0.00         IPET  14759.00         7000   -7759.00
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 4. SIMULATED EXECUTION TIMELINE (Gantt Chart)
@@ -93,8 +139,8 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
 
   CORE 0  |  Hyperperiod: 30000 µs  (scale: 468.8 µs/char)
   ────────────────────────────────────────────────────────────────────────────────────────
-  tau1             [A] ████░░░░░░░░█████░░░░░░░░█████░░░░░░░░█████░░░░░░░░█████░░░░░░░░
-  tau2             [B] ░░░████████░░░░░░░░░░█████>░░███░░░░░░░░░░███████░░░░░░░░░░░░░░░
+  tau1             [A] ███████░░░░░░░░░░██████[91m|[0m[91m█[0m[91m█[0m░░░░░░░░[91m█[0m[91m█[0m[91m|[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m░░░░░░░░░░[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m
+  tau2             [B] ░░░░░░████████[91m|[0m[91m█[0m[91m█[0m[91m█[0m░░░░░░░[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m░░░░░░░░░░░░░[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m|[0m[91m█[0m[91m█[0m░░░░
                          0         5000       10000      15000     20000      25000      
 
   Legend:  █ = executing   ░ = idle   > = preemption point
@@ -103,6 +149,12 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
     [A]  tau1
     [B]  tau2
 
+  DEADLINE MISSES (4 events):
+    [MISS]  tau2                 released @ 0 µs,  deadline @ 7000 µs,  finished @ 8387.44 µs  (+1387.44 µs late)
+    [MISS]  tau1                 released @ 6000 µs,  deadline @ 11000 µs,  finished @ 11819.88 µs  (+819.88 µs late)
+    [MISS]  tau1                 released @ 12000 µs,  deadline @ 17000 µs,  finished @ 19688.81 µs  (+2688.81 µs late)
+    [MISS]  tau2                 released @ 20000 µs,  deadline @ 27000 µs,  finished @ 27899.13 µs  (+899.13 µs late)
+
 5. JITTER ANALYSIS
 
 
@@ -110,8 +162,8 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
   ────────────────────────────────────────────────────────────────────────────
   Task                    Activations  Max Jitter µs  Mean Jitter µs Assessment
   ────────────────────────────────────────────────────────────────────────────
-  tau1                              5           0.00            0.00  EXCELLENT  (<1% of period)
-  tau2                              3        1843.29          614.43  MODERATE   (<20% of period)
+  tau1                              5        4325.56         2460.19  HIGH (>20% of period
+  tau2                              3        3234.84         2648.84  HIGH (>20% of period
   ────────────────────────────────────────────────────────────────────────────
   NOTE: Jitter is measured against the ideal periodic release time.
   Non-zero jitter is caused by higher-priority task preemption.
@@ -130,18 +182,17 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
 
 7. CONFIDENCE NOTES
 
-  All WCETs are [CALCULATED] from code-size heuristic.
-  Response times are OPTIMISTIC LOWER BOUNDS — not measured values.
-  The analysis is conservative for schedulability (real silicon may be slower).
+  HIGH CONFIDENCE: [IPET]
+  All WCETs mathematically proven via Implicit Path Enumeration Technique (IPET).
+  Pipeline stalls, taken branch flushes, and Flash prefetch buffer misses fully modeled.
 
   WCET Derivation Method:
-    [CALCULATED]  Code-size heuristic: size_bytes / 2.5 bytes_per_insn × 1.15 penalty
-                  Source: Thumb-2 ISA encoding statistics + ARMv7-M pipeline model.
-                  Treat response times as OPTIMISTIC LOWER BOUNDS.
-
-    [SIMULATED]   Instruction counts from Renode functional trace.
-                  Renode does NOT model cache effects or bus arbitration.
-                  Timing is functional only — treat as APPROXIMATE.
+    [IPET]              Implicit Path Enumeration Technique (microarchitecturally proven).
+                        Models pipeline hazards, branch flushes, and 128-bit Flash prefetch.
+    [IPET-ANNOTATED]    IPET with user-annotated loop bound overrides from schedule.json.
+    [IPET-CONSERVATIVE] IPET using conservative fallback (--max-loop-bound) for unbounded loops.
+    [CALCULATED]        Code-size heuristic (fallback when no disassembly or ELF available).
+    [SIMULATED]         Instruction counts from Renode functional trace (approximate).
 
   RTA Assumptions:
     - Single-core analysis uses configured scheduling algorithm (RM/DM/EDF).

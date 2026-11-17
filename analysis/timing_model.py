@@ -27,7 +27,9 @@ def calc_isr_penalty_ns(
     and source citation string.
     """
     cycle_ns = 1000.0 / freq_mhz
-    hw_entry = chip.get('exception_entry_cycles', 12)
+    arch = str(chip.get('arch', '')).lower()
+    default_entry = 15 if ('m0' in arch or 'v6' in arch) else 12
+    hw_entry = chip.get('exception_entry_cycles', default_entry)
     ws = lookup_wait_states(freq_mhz, chip)
     
     cache = chip.get('cache', {})
@@ -38,10 +40,12 @@ def calc_isr_penalty_ns(
         # Pre-fetch or simple flash accelerator approximation
         miss_penalty = (ws + 1)
 
+    arm_spec = "ARMv6-M" if ('m0' in arch or 'v6' in arch) else "ARMv7-M"
+
     return {
         'itcm_ns':       hw_entry * cycle_ns,
         'flash_warm_ns': (hw_entry + ws + 1) * cycle_ns,
         'flash_cold_ns': (hw_entry + miss_penalty) * cycle_ns,
-        'citation':      f"ARMv7-M ARM Section B1.5.6 ({hw_entry} cy entry) + "
+        'citation':      f"{arm_spec} ARM Section B1.5.6 ({hw_entry} cy entry) + "
                          f"RM Table ({ws} WS at {freq_mhz} MHz)"
     }

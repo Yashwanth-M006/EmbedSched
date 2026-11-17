@@ -146,11 +146,14 @@ def render_gantt_chart(sim: SimulationResult) -> str:
 def render_jitter_table(sim: SimulationResult, tasks) -> str:
     """
     Render per-task jitter table showing start-time variation.
-
-    Jitter = max(start_times) - min(start_times) relative to ideal periodic start.
-    Ideal start for activation k of task with period T = k * T.
     """
+    from analysis.jitter_analyzer import compute_jitter_analysis
+
     if not sim.start_times:
+        return "  [Jitter: no simulation data]\n"
+
+    report = compute_jitter_analysis(sim, tasks)
+    if not report.tasks:
         return "  [Jitter: no simulation data]\n"
 
     lines: List[str] = []
@@ -159,9 +162,6 @@ def render_jitter_table(sim: SimulationResult, tasks) -> str:
     sep = "  " + "─" * 76
     lines.append(sep)
 
-    # Build period lookup
-    period_map = {t.name: t.period_us for t in tasks}
-
     header = (
         f"  {'Task':<22} {'Activations':>12} "
         f"{'Max Jitter µs':>14} {'Mean Jitter µs':>15} {'Assessment'}"
@@ -169,43 +169,10 @@ def render_jitter_table(sim: SimulationResult, tasks) -> str:
     lines.append(header)
     lines.append(sep)
 
-    for task_name, starts in sorted(sim.start_times.items()):
-        if not starts:
-            continue
-        period = period_map.get(task_name, 0)
-        if period <= 0:
-            continue
-
-        # Compute jitter: difference between actual start and ideal start
-        # Ideal start for activation k = k * period
-        jitters = []
-        for k, actual_start in enumerate(sorted(starts)):
-            ideal = k * period
-            jitters.append(min(abs(actual_start - ideal), period))
-
-        max_j  = max(jitters)
-        mean_j = sum(jitters) / len(jitters)
-
-        # Assessment
-        if max_j < period * 0.01:
-            assess = "EXCELLENT  (<1% of period)"
-        elif max_j < period * 0.05:
-            assess = "GOOD       (<5% of period)"
-        elif max_j < period * 0.20:
-            assess = "MODERATE   (<20% of period)"
-        else:
-            t_obj = next((t for t in tasks if t.name == task_name), None)
-            core_tasks = [t for t in tasks if t_obj and getattr(t, 'core_id', 0) == getattr(t_obj, 'core_id', 0) and t.period_us > 0]
-            core_u = sum(t.wcet_us / t.period_us for t in core_tasks) if core_tasks else 0.0
-            all_sched = all(getattr(t, 'schedulable', True) is not False for t in core_tasks)
-            if core_u >= 0.75 and all_sched:
-                assess = "HIGH       (>20% of period — expected at high utilization; reduce utilization if jitter affects control stability)"
-            else:
-                assess = "HIGH       (>20% of period — review priority assignment)"
-
+    for task_name, metric in sorted(report.tasks.items()):
         lines.append(
-            f"  {task_name:<22} {len(starts):>12}  "
-            f"{max_j:>13.2f}  {mean_j:>14.2f}  {assess}"
+            f"  {task_name:<22} {metric.activations_count:>12}  "
+            f"{metric.max_jitter_us:>13.2f}  {metric.mean_jitter_us:>14.2f}  {metric.assessment_detail.split(' — ')[0]}"
         )
 
     lines.append(sep)

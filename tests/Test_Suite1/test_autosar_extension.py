@@ -361,6 +361,44 @@ def test_parse_autosar_json():
 # Runner
 # ─────────────────────────────────────────────────────────────────────────────
 
+def test_indirect_call_detection_and_lto_devirtualization():
+    """Detects indirect BLX callsites and advises Whole-Program LTO devirtualization."""
+    from analysis.call_graph import extract_call_graph_and_indirect_calls
+    from analysis.rules.stack_risk import check_indirect_calls
+
+    mock_disasm = """
+08000100 <task_entry>:
+ 8000100:\tb510      \tpush\t{r4, lr}
+ 8000102:\tf7ff fffe \tbl\t0x8000200 <direct_helper>
+ 8000106:\t4b02      \tldr\tr3, [pc, #8]
+ 8000108:\t4798      \tblx\tr3
+ 800010a:\tbd10      \tpop\t{r4, pc}
+
+08000200 <direct_helper>:
+ 8000200:\t4770      \tbx\tlr
+"""
+    cg, ic = extract_call_graph_and_indirect_calls(mock_disasm)
+
+    assert 'task_entry' in cg
+    assert 'direct_helper' in cg['task_entry']
+    assert 'task_entry' in ic
+    assert len(ic['task_entry']) == 1
+    addr, mnem, reg = ic['task_entry'][0]
+    assert addr == 0x8000108
+    assert mnem == 'blx'
+    assert reg == 'r3'
+    assert 'direct_helper' not in ic
+
+    findings = check_indirect_calls(ic)
+    assert len(findings) == 1
+    f = findings[0]
+    assert f.rule == "indirect_calls_devirtualization_advisory"
+    assert f.severity == "INFO"
+    assert "-flto -fwhole-program -fdevirtualize" in f.message
+
+    print("  PASS  Indirect call detection and LTO devirtualization advisory verified")
+
+
 def run_all_tests():
     tests = [
         test_wcet_code_size_heuristic,
@@ -376,6 +414,7 @@ def run_all_tests():
         test_sim_hyperperiod_correct,
         test_sim_start_times_populated,
         test_parse_autosar_json,
+        test_indirect_call_detection_and_lto_devirtualization,
     ]
 
     passed = 0

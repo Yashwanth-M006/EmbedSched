@@ -80,6 +80,8 @@ class SimulationResult:
         self.start_times:     Dict[str, List[float]]  = defaultdict(list)
         self.hyperperiod_us:  float                   = 0.0
         self.capped:          bool                    = False   # True if HP was capped
+        self.preemption_counts: Dict[str, int]        = defaultdict(int)
+        self.context_switch_ratios: Dict[str, float]  = {}
 
 
 # ---------------------------------------------------------------------------
@@ -89,7 +91,8 @@ class SimulationResult:
 def simulate_schedule(
     tasks: List[AutosarTask],
     stochastic: bool = False,
-    cores: Dict[int, CoreConfig] = None
+    cores: Dict[int, CoreConfig] = None,
+    autosar_priority: bool = False,
 ) -> SimulationResult:
     """
     Simulate the task set over one hyperperiod.
@@ -116,7 +119,14 @@ def simulate_schedule(
 
     # Simulate every core for the SAME global simulation length
     for core_id, core_tasks in sorted(core_tasks_map.items()):
-        _simulate_core(core_id, core_tasks, global_sim_len, result, stochastic, cores)
+        _simulate_core(core_id, core_tasks, global_sim_len, result, stochastic, cores, autosar_priority=autosar_priority)
+
+    # Compute context-switch ratio theta_i = (preemption_count * t_ctx) / C_i
+    # where t_ctx = 2.0 us (ARM Cortex-M register push/pop + OS context save/restore)
+    for t in tasks:
+        if t.wcet_us > 0:
+            p_cnt = result.preemption_counts.get(t.name, 0)
+            result.context_switch_ratios[t.name] = (p_cnt * 2.0) / t.wcet_us
 
     return result
 
@@ -132,6 +142,7 @@ def _simulate_core(
     result: SimulationResult,
     stochastic: bool = False,
     cores: Dict[int, CoreConfig] = None,
+    autosar_priority: bool = False,
 ) -> None:
     """
     Simulate one core using a greedy preemptive fixed-priority or EDF scheduler.
@@ -182,7 +193,12 @@ def _simulate_core(
         # Drain all releases that have arrived by `now`
         while release_idx < len(all_releases) and all_releases[release_idx][0] <= now + 1e-9:
             rel, dl, wcet, t = all_releases[release_idx]
-            prio_key = dl if is_edf else (t.priority if t.priority is not None else 255)
+            if is_edf:
+                prio_key = dl
+            elif autosar_priority:
+                prio_key = -(t.priority if t.priority is not None else -1)
+            else:
+                prio_key = t.priority if t.priority is not None else 255
             heapq.heappush(ready_queue, (prio_key, rel, wcet, dl, t))
             release_idx += 1
 
@@ -205,7 +221,7 @@ def _simulate_core(
 
         # Determine how far we can run before the next higher-priority release
         next_hp_release = _next_release_before(
-            all_releases, release_idx, prio_key, now, hyperperiod, is_edf
+            all_releases, release_idx, prio_key, now, hyperperiod, is_edf, autosar_priority=autosar_priority
         )
 
         available = next_hp_release - now if next_hp_release is not None else (hyperperiod - now)
@@ -237,6 +253,7 @@ def _simulate_core(
         now = slot_end
 
         if preempted:
+            result.preemption_counts[task.name] += 1
             # Put task back into ready queue with reduced remaining time
             heapq.heappush(ready_queue, (prio_key, rel_t, new_remaining, dl_abs, task))
         else:
@@ -282,6 +299,7 @@ def _next_release_before(
     now: float,
     hyperperiod: float,
     is_edf: bool = False,
+    autosar_priority: bool = False,
 ) -> Optional[float]:
     """
     Find the earliest release time > now of a task with higher priority (or earlier deadline).
@@ -291,7 +309,12 @@ def _next_release_before(
     start_idx = max(from_idx, bisect.bisect_right(releases, now + 1e-9, key=lambda x: x[0]))
     for i in range(start_idx, len(releases)):
         rel_t, dl, _, task = releases[i]
-        key = dl if is_edf else (task.priority if task.priority is not None else 255)
+        if is_edf:
+            key = dl
+        elif autosar_priority:
+            key = -(task.priority if task.priority is not None else -1)
+        else:
+            key = task.priority if task.priority is not None else 255
         if key < current_prio_key:
             return rel_t
     return None

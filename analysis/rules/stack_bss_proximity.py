@@ -33,7 +33,9 @@ def check_stack_bss_proximity(
     """
     findings = []
 
-    has_stack_section = '__stack_start' in linker_symbols
+    has_stack_section = ('__stack_start' in linker_symbols or 
+                         '_sstack' in linker_symbols or 
+                         '__stack_limit' in linker_symbols)
     has_min_stack = '_Min_Stack_Size' in linker_symbols
 
     # Only run if the stack section is fully declared (otherwise stack_section.py handles it)
@@ -41,7 +43,9 @@ def check_stack_bss_proximity(
         return []
 
     bss_end = linker_symbols.get('__bss_end__', 0) or linker_symbols.get('_ebss', 0)
-    stack_start = linker_symbols.get('__stack_start', 0)
+    stack_start = (linker_symbols.get('__stack_start', 0) or 
+                   linker_symbols.get('_sstack', 0) or 
+                   linker_symbols.get('__stack_limit', 0))
     stack_end = linker_symbols.get('__stack_end', 0)
     min_stack_size = linker_symbols.get('_Min_Stack_Size', 0)
     estack = linker_symbols.get('_estack', 0)

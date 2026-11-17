@@ -1,6 +1,7 @@
 
 [AUTOSAR] Loading task configuration...
-[AUTOSAR] Extracting WCETs from firmware artifacts...
+[AUTOSAR] Extracting WCETs from firmware artifacts via IPET...
+[AUTOSAR] Priority ordering mode: Standard (lower number = higher priority)
 [AUTOSAR] Running Response Time Analysis (RTA)...
 [AUTOSAR] Running discrete-event scheduler simulation...
 [AUTOSAR] Generating matplotlib charts in charts...
@@ -23,9 +24,9 @@ OVERALL SCORE: 70 / 100
 FINDINGS (2 total: 1 critical, 0 warnings, 1 info)
 --------------------------------------------------
 
-┌──────────────────────────────────────────────────────────────────────────┐
-│ CRITICAL FINDINGS (1) - ACTION REQUIRED                                  │
-└──────────────────────────────────────────────────────────────────────────┘
++--------------------------------------------------------------------------+
+| CRITICAL FINDINGS (1) - ACTION REQUIRED                                  |
++--------------------------------------------------------------------------+
 
   [CRITICAL] [STATIC] autosar_deadlock_risk
     Deadlock risk detected — inconsistent lock acquisition order across tasks.
@@ -35,12 +36,12 @@ FINDINGS (2 total: 1 critical, 0 warnings, 1 info)
       Enforce a consistent global lock ordering to eliminate the cycle. [STATIC]
     Fix: Impose a global total order on all locks (e.g., alphabetical or by ID). Every task must acquire locks in that order. Never acquire lock B while holding lock A if any other task acquires A after B.
 
-┌──────────────────────────────────────────────────────────────────────────┐
-│ WARNING FINDINGS (0) - None Detected                                     │
-└──────────────────────────────────────────────────────────────────────────┘
-┌──────────────────────────────────────────────────────────────────────────┐
-│ INFORMATIONAL FINDINGS (1)                                               │
-└──────────────────────────────────────────────────────────────────────────┘
++--------------------------------------------------------------------------+
+| WARNING FINDINGS (0) - None Detected                                     |
++--------------------------------------------------------------------------+
++--------------------------------------------------------------------------+
+| INFORMATIONAL FINDINGS (1)                                               |
++--------------------------------------------------------------------------+
 
   [INFO] [STATIC] explicit_stack_found
     Explicit stack reservation found.
@@ -52,6 +53,7 @@ FINDINGS (2 total: 1 critical, 0 warnings, 1 info)
 
 ==============================================================================
  AUTOSAR SCHEDULABILITY ANALYSIS
+ Priority Convention: Standard Real-Time (Lower numerical value = Higher priority)
 ==============================================================================
 
   ⚠  DEADLOCK_RISK  ⚠
@@ -66,29 +68,31 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
   ────────────────────────────────────────────────────────────────────────────────────
   Task                    Period µs   WCET µs      R µs      D µs   Margin µs  Verdict
   ────────────────────────────────────────────────────────────────────────────────────
-  Task_Core0_Alpha            10000      0.20      0.20     10000     9999.80     PASS
-  Task_Core1_Beta             20000      0.20      0.20     20000    19999.80     PASS
+  Task_Core0_Alpha            10000    114.00    114.00     10000     9886.00     PASS
+  Task_Core1_Beta             20000    114.00    114.00     20000    19886.00     PASS
   ────────────────────────────────────────────────────────────────────────────────────
-  Overall: PASS [CALCULATED] — all tasks meet timing deadlines  ⚠ DEADLOCK_RISK DETECTED
+  Overall: PASS [IPET-CONSERVATIVE] — all tasks meet timing deadlines  ⚠ DEADLOCK_RISK DETECTED
 
 
 1. TASK → FUNCTION MAPPING
   ──────────────────────────────────────────────────────────────────────────────────────
   AUTOSAR Task             Entry Function             WCET (µs)    Source           Core
   ──────────────────────────────────────────────────────────────────────────────────────
-  Task_Core0_Alpha         task_core0_alpha           0.20         [CALCULATED]     [Core 0]
-  Task_Core1_Beta          task_core1_beta            0.20         [CALCULATED]     [Core 1]
+  Task_Core0_Alpha         task_core0_alpha           114.00       [IPET-CONSERVATIVE] [Core 0]
+  Task_Core1_Beta          task_core1_beta            114.00       [IPET-CONSERVATIVE] [Core 1]
   ──────────────────────────────────────────────────────────────────────────────────────
 
 2. SCHEDULABILITY DASHBOARD
 
   Core 0  (1 periodic tasks):
-    [░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░|░]  0.0%  RM bound: 100.0%  →  GUARANTEED (below RM bound)
+    [░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░|░]  1.1%  RM bound: 100.0%  →  GUARANTEED (below RM bound)
+    Duty breakdown: Tasks 1.1% | ISRs 0.0% | Idle 98.9%
 
   Core 1  (1 periodic tasks):
-    [░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░|░]  0.0%  RM bound: 100.0%  →  GUARANTEED (below RM bound)
+    [░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░|░]  0.6%  RM bound: 100.0%  →  GUARANTEED (below RM bound)
+    Duty breakdown: Tasks 0.6% | ISRs 0.0% | Idle 99.4%
 
-  ● VERDICT: SCHEDULABLE  — all tasks meet their deadlines (per RTA).  [CALCULATED]
+  ● VERDICT: SCHEDULABLE  — all tasks meet their deadlines (per RTA).  [IPET-CONSERVATIVE]
     ⚠ WARNING: DEADLOCK_RISK detected — system may freeze at runtime despite
       meeting timing deadlines. See findings for details.
 
@@ -96,8 +100,8 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
   Task                    Core  Prio  Period µs   WCET µs  Blk µs       Source   WCRT µs  Deadline µs  Margin µs
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  Task_Core0_Alpha           0     1      10000      0.20    0.00   CALCULATED      0.20        10000    9999.80
-  Task_Core1_Beta            1     1      20000      0.20    0.00   CALCULATED      0.20        20000   19999.80
+  Task_Core0_Alpha           0     1      10000    114.00    0.00 IPET-CONSERVATIVE    114.00        10000    9886.00
+  Task_Core1_Beta            1     1      20000    114.00    0.00 IPET-CONSERVATIVE    114.00        20000   19886.00
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 4. SIMULATED EXECUTION TIMELINE (Gantt Chart)
@@ -126,8 +130,8 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
   ────────────────────────────────────────────────────────────────────────────
   Task                    Activations  Max Jitter µs  Mean Jitter µs Assessment
   ────────────────────────────────────────────────────────────────────────────
-  Task_Core0_Alpha                  2           0.00            0.00  EXCELLENT  (<1% of period)
-  Task_Core1_Beta                   1           0.00            0.00  EXCELLENT  (<1% of period)
+  Task_Core0_Alpha                  2           0.00            0.00  EXCELLENT (<1% of period)
+  Task_Core1_Beta                   1           0.00            0.00  EXCELLENT (<1% of period)
   ────────────────────────────────────────────────────────────────────────────
   NOTE: Jitter is measured against the ideal periodic release time.
   Non-zero jitter is caused by higher-priority task preemption.
@@ -146,18 +150,18 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
 
 7. CONFIDENCE NOTES
 
-  All WCETs are [CALCULATED] from code-size heuristic.
-  Response times are OPTIMISTIC LOWER BOUNDS — not measured values.
-  The analysis is conservative for schedulability (real silicon may be slower).
+  CONFIDENCE: [IPET-CONSERVATIVE]
+  Tasks with conservative loop bounds: Task_Core0_Alpha, Task_Core1_Beta
+  Microarchitectural pipeline & prefetch timing is modeled, but one or more loop bounds
+  fell back to conservative limit (--max-loop-bound). Supply bounds via schedule.json or GCC -fopt-info.
 
   WCET Derivation Method:
-    [CALCULATED]  Code-size heuristic: size_bytes / 2.5 bytes_per_insn × 1.15 penalty
-                  Source: Thumb-2 ISA encoding statistics + ARMv7-M pipeline model.
-                  Treat response times as OPTIMISTIC LOWER BOUNDS.
-
-    [SIMULATED]   Instruction counts from Renode functional trace.
-                  Renode does NOT model cache effects or bus arbitration.
-                  Timing is functional only — treat as APPROXIMATE.
+    [IPET]              Implicit Path Enumeration Technique (microarchitecturally proven).
+                        Models pipeline hazards, branch flushes, and 128-bit Flash prefetch.
+    [IPET-ANNOTATED]    IPET with user-annotated loop bound overrides from schedule.json.
+    [IPET-CONSERVATIVE] IPET using conservative fallback (--max-loop-bound) for unbounded loops.
+    [CALCULATED]        Code-size heuristic (fallback when no disassembly or ELF available).
+    [SIMULATED]         Instruction counts from Renode functional trace (approximate).
 
   RTA Assumptions:
     - Single-core analysis uses configured scheduling algorithm (RM/DM/EDF).

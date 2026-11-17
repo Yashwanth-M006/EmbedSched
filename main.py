@@ -22,11 +22,11 @@ from parsers.startup_parser import parse_startup_file
 from parsers.elf_parser import run_objdump_disassembly
 from models.chip_profile import load_chip_profile
 from analysis.region_classifier import classify_address
-from analysis.call_graph import build_call_graph_from_disassembly
+from analysis.call_graph import build_call_graph_from_disassembly, extract_call_graph_and_indirect_calls
 from analysis.stack_analyzer import analyze_all_stacks
 from analysis.rules.isr_placement import check_isr_placement
 from analysis.rules.itcm_overflow import check_itcm_overflow
-from analysis.rules.stack_risk import check_stack_risk
+from analysis.rules.stack_risk import check_stack_risk, check_indirect_calls
 from analysis.rules.dma_alignment import check_dma_alignment
 from analysis.rules.bus_contention import check_bus_contention
 from analysis.rules.stack_section import check_no_stack_section
@@ -70,11 +70,31 @@ def main():
     )
     parser.add_argument(
         '--stochastic-sim', action='store_true',
-        help="Inject random execution variance (85-100% WCET) and release drift to the scheduler simulation."
+        help="Inject random execution variance (85-100%% WCET) and release drift to the scheduler simulation."
     )
     parser.add_argument(
         '--output', type=str,
         help="Path to output markdown report file (e.g. reports/analysis_report.md)"
+    )
+    parser.add_argument(
+        '--opt-info', type=str,
+        help="Path to GCC -fopt-info-loop output log file for proven compiler loop bounds."
+    )
+    parser.add_argument(
+        '--max-loop-bound', type=int, default=1000,
+        help="Maximum loop bound fallback for loops not statically determinable (default: 1000)."
+    )
+    parser.add_argument(
+        '--strict-bounds', action='store_true',
+        help="Fail analysis if any loop cannot be statically bounded (no conservative fallback)."
+    )
+    parser.add_argument(
+        '--autosar-priority', action='store_true',
+        help="Use AUTOSAR OS / OSEK priority convention where higher numerical values represent higher priority (e.g. 10 > 5). Default is standard real-time convention where lower values represent higher priority (1 > 2)."
+    )
+    parser.add_argument(
+        '--priority-order', choices=['standard', 'autosar'], default='standard',
+        help="Explicit priority ordering convention: 'standard' (lower number = higher priority) or 'autosar' (higher number = higher priority)."
     )
     
     args = parser.parse_args()
@@ -120,7 +140,7 @@ def main():
         isr_names = parse_startup_file(args.startup) if args.startup else []
         
         disassembly = run_objdump_disassembly(args.elf)
-        call_graph = build_call_graph_from_disassembly(disassembly)
+        call_graph, indirect_calls = extract_call_graph_and_indirect_calls(disassembly)
 
         # Parse hot functions list (optional, for flash fragmentation analysis)
         hot_func_names = []
@@ -248,6 +268,9 @@ def main():
 
         stack_cap, stack_cap_src = resolve_stack_capacity(merged_linker_symbols)
         findings.extend(check_stack_risk(max_d, max_c, has_rec, stack_cap, merged_linker_symbols, linker_regions, chip_regions, stack_cap_src=stack_cap_src))
+
+    # Rule 3 & 4: Unresolved indirect calls (LTO devirtualization advisory)
+    findings.extend(check_indirect_calls(indirect_calls))
 
     # Rule 9: Stack-BSS proximity (zero gap detection — Test 5 pattern)
     findings.extend(check_stack_bss_proximity(
@@ -501,14 +524,28 @@ def _run_autosar_analysis(
     all_tasks = tasks + isr_tasks
 
     # ── Extract WCETs ────────────────────────────────────────────────────────
-    print("[AUTOSAR] Extracting WCETs from firmware artifacts...")
+    print("[AUTOSAR] Extracting WCETs from firmware artifacts via IPET...")
     extract_wcets(
         tasks=all_tasks,
         symbols=symbols,
         call_graph=call_graph,
         chip_profile=chip_profile,
         dynamic_profile=dynamic_profile,
+        elf_path=args.elf,
+        user_loop_bounds=getattr(autosar_cfg, 'loop_bounds', None),
+        opt_info_path=getattr(args, 'opt_info', None),
+        max_loop_bound=getattr(args, 'max_loop_bound', 1000),
+        strict_bounds=getattr(args, 'strict_bounds', False),
     )
+
+    # ── Resolve Priority Convention ──────────────────────────────────────────
+    use_autosar_prio = (
+        getattr(args, 'autosar_priority', False)
+        or getattr(args, 'priority_order', 'standard') == 'autosar'
+        or getattr(autosar_cfg, 'priority_order', 'standard') == 'autosar'
+    )
+    prio_label = "AUTOSAR (higher number = higher priority)" if use_autosar_prio else "Standard (lower number = higher priority)"
+    print(f"[AUTOSAR] Priority ordering mode: {prio_label}")
 
     # ── Run RTA ──────────────────────────────────────────────────────────────
     # RTA only on periodic tasks (period_us > 0)
@@ -520,7 +557,8 @@ def _run_autosar_analysis(
         resources=autosar_cfg.resources, 
         channels=autosar_cfg.inter_core_channels,
         chip_regions=chip_regions,
-        chip_profile=chip_profile
+        chip_profile=chip_profile,
+        autosar_priority=use_autosar_prio,
     )
 
     util_info = compute_utilization(periodic_tasks, autosar_cfg.cores)
@@ -534,7 +572,8 @@ def _run_autosar_analysis(
             sim = simulate_schedule(
                 [t for t in all_tasks if t.period_us > 0 and t.wcet_us > 0],
                 stochastic=is_stoch,
-                cores=autosar_cfg.cores if autosar_cfg else None
+                cores=autosar_cfg.cores if autosar_cfg else None,
+                autosar_priority=use_autosar_prio,
             )
         except Exception as e:
             print(f"[AUTOSAR] Simulation failed: {e} — Gantt chart unavailable.", file=sys.stderr)
@@ -580,9 +619,8 @@ def _run_autosar_analysis(
     # Merge into the master findings list (affects the overall score)
     findings.extend(autosar_findings)
 
-    # ── Determine propagated confidence note (3-tier: SIMULATED > CALCULATED > HEURISTIC) ──
-    # Use wcet_cycles (not wcet_us) to catch HEURISTIC tasks whose tiny 10-cycle
-    # placeholder rounds to 0 µs but is still a real (unreliable) estimate.
+    # ── Determine propagated confidence note ──
+    # Hierarchy: [SIMULATED] > [IPET] > [IPET-ANNOTATED] > [IPET-CONSERVATIVE] > [CALCULATED] > [HEURISTIC]
     all_tags = {t.wcet_tag for t in all_tasks if t.wcet_cycles > 0 or t.wcet_tag == '[HEURISTIC]'}
     lowest_tag = lowest_confidence_tag(all_tags)
 
@@ -592,26 +630,44 @@ def _run_autosar_analysis(
             f"LOWEST CONFIDENCE: [HEURISTIC]\n"
             f"  Tasks with heuristic WCET: {', '.join(heuristic_tasks)}\n"
             f"  These functions were not found in the ELF symbol table, .su files, or Renode trace.\n"
-            f"  The 10-cycle placeholder is NOT a measured value — schedulability verdict is UNRELIABLE.\n"
+            f"  The placeholder is NOT a measured value — schedulability verdict is UNRELIABLE.\n"
             f"  Fix: verify entry_function names and recompile with -ffunction-sections -fstack-usage."
         )
-    elif "[CALCULATED]" in all_tags and "[SIMULATED]" in all_tags:
+    elif lowest_tag == "[CALCULATED]":
         conf_note = (
-            "Mixed confidence: some WCETs are [CALCULATED] (code-size heuristic) "
-            "and some are [SIMULATED] (Renode trace).\n"
-            "  Response times are OPTIMISTIC — treat as lower bounds for [CALCULATED] tasks."
+            "LOWEST CONFIDENCE: [CALCULATED]\n"
+            "  WCETs derived from code-size heuristic.\n"
+            "  Response times are OPTIMISTIC LOWER BOUNDS — not microarchitecturally proven values."
         )
-    elif "[CALCULATED]" in all_tags:
+    elif lowest_tag == "[IPET-CONSERVATIVE]":
+        conservative_tasks = [t.name for t in all_tasks if t.wcet_tag == "[IPET-CONSERVATIVE]"]
         conf_note = (
-            "All WCETs are [CALCULATED] from code-size heuristic.\n"
-            "  Response times are OPTIMISTIC LOWER BOUNDS — not measured values.\n"
-            "  The analysis is conservative for schedulability (real silicon may be slower)."
+            f"CONFIDENCE: [IPET-CONSERVATIVE]\n"
+            f"  Tasks with conservative loop bounds: {', '.join(conservative_tasks)}\n"
+            f"  Microarchitectural pipeline & prefetch timing is modeled, but one or more loop bounds\n"
+            f"  fell back to conservative limit (--max-loop-bound). Supply bounds via schedule.json or GCC -fopt-info."
+        )
+    elif lowest_tag == "[IPET-ANNOTATED]":
+        annotated_tasks = [t.name for t in all_tasks if t.wcet_tag == "[IPET-ANNOTATED]"]
+        conf_note = (
+            f"CONFIDENCE: [IPET-ANNOTATED]\n"
+            f"  Tasks with user-annotated loop bounds: {', '.join(annotated_tasks)}\n"
+            f"  Microarchitectural timing proven via IPET with user-supplied loop bounds."
+        )
+    elif lowest_tag == "[IPET]":
+        conf_note = (
+            "HIGH CONFIDENCE: [IPET]\n"
+            "  All WCETs mathematically proven via Implicit Path Enumeration Technique (IPET).\n"
+            "  Pipeline stalls, taken branch flushes, and Flash prefetch buffer misses fully modeled."
+        )
+    elif lowest_tag == "[SIMULATED]":
+        conf_note = (
+            "CONFIDENCE: [SIMULATED]\n"
+            "  WCETs derived from Renode functional trace.\n"
+            "  Renode does not model hardware wait states or bus arbitration — timing is approximate."
         )
     else:
-        conf_note = (
-            "All WCETs are [SIMULATED] from Renode functional trace.\n"
-            "  Renode does NOT model cache or bus arbitration — timing is approximate."
-        )
+        conf_note = f"CONFIDENCE: {lowest_tag}"
 
     # ── Generate matplotlib charts (Outputs 1, 2, 3, 4) ──────────────────────
     if getattr(args, 'charts_dir', None):
@@ -625,6 +681,7 @@ def _run_autosar_analysis(
                 util_info=util_info,
                 cores=autosar_cfg.cores,
                 lowest_tag=lowest_tag,
+                autosar_priority=use_autosar_prio,
             )
         except Exception as e:
             print(f"[AUTOSAR] Chart generation failed: {e}", file=sys.stderr)
@@ -641,6 +698,7 @@ def _run_autosar_analysis(
             deadlock_findings=deadlock_findings,
             lowest_confidence_tag=lowest_tag,
             charts_dir=getattr(args, 'charts_dir', None),
+            autosar_priority=use_autosar_prio,
         )
 
     # Store for markdown exporter
@@ -656,6 +714,7 @@ def _run_autosar_analysis(
             'wcrt': round(t.wcrt_us, 2),
             'deadline': t.deadline_us,
             'schedulable': t.schedulable,
+            'tag': t.wcet_tag,
         })
     main._last_autosar_data = {
         'tasks': task_list_data,
@@ -663,6 +722,7 @@ def _run_autosar_analysis(
         'verdict': "SCHEDULABLE" if not has_mismatch_error and all(t.schedulable for t in all_tasks) else "UNSCHEDULABLE / MISMATCH",
         'charts_dir': getattr(args, 'charts_dir', None),
         'has_sim': sim is not None,
+        'priority_order': prio_label,
     }
 
     return has_mismatch_error, reporter
