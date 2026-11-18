@@ -1,7 +1,7 @@
 # Test Case 1: Baseline — Single Core, Rate Monotonic, No Resources
 
 > **Status:** `PASS`  
-> **Confidence:** `[CALCULATED]`  
+> **Confidence:** `[IPET]`  
 > **Architecture:** STM32F407 (Cortex-M4, 168 MHz)  
 > **Scheduler:** Single-Core Preemptive Rate Monotonic (RM)
 
@@ -12,7 +12,7 @@
 Test Case 1 serves as the **end-to-end baseline and sanity verification** for the EmbedSched timing and schedulability pipeline. It proves that on a nominally loaded, correctly configured hard real-time firmware binary:
 - Build artifacts (`firmware.elf`, `firmware.map`, `linker.ld`) are parsed without errors.
 - Symbol sizes and addresses are correctly extracted from SRAM1 and DTCM memory sections.
-- Code-size heuristics derive realistic WCET figures (`[CALCULATED]`).
+- Static microarchitectural IPET analysis derives realistic, pipeline-accurate WCET figures (`[IPET]`).
 - Response Time Analysis (RTA) confirms feasibility with generous positive slack margins.
 - Discrete-event scheduler simulation executes across the hyperperiod with 0 deadline misses.
 - Visual outputs (Dashboard, Gantt chart, Jitter plot, RTA table) render accurately without sub-pixel truncation.
@@ -31,9 +31,9 @@ Before validating adversarial boundary conditions, failure modes, or multi-core 
 ## 3. Configuration & Task Set
 
 ### Hardware Profile (`stm32f407.yaml`)
-- **Core:** Single Cortex-M4 @ 168 MHz ($t_{\text{cycle}} \approx 5.95\text{ ns}$)
+- **Core:** Single Cortex-M4 @ 168 MHz ($t_{\text{cycle}} = 1000/168 \approx 5.952\text{ ns}$)
 - **Memory Layout:** DTCM (64 KB @ 0x10000000), SRAM1 (112 KB @ 0x20000000), Flash (1024 KB @ 0x08000000)
-- **Wait States:** 0 wait states in DTCM and SRAM1
+- **Wait States:** 0 wait states in DTCM and SRAM1; Flash configured with 4 wait states (5 bus cycles per access) at 168 MHz
 
 ### Task Configuration (`schedule.json`)
 Three harmonic tasks operating on Core 0 under Rate Monotonic (RM) priority assignment:
@@ -46,48 +46,54 @@ Three harmonic tasks operating on Core 0 under Rate Monotonic (RM) priority assi
 
 ---
 
----
-
 ## 4. Step-by-Step Calculations & Schedulability Math
 
-### A. WCET Derivation from Binary Artifacts
-In `main.c`, the task functions contain inline assembly `.fill` statements that define their machine code size in SRAM1:
+### A. WCET Derivation from Binary Artifacts (IPET Microarchitectural Analysis)
+In `main.c`, the task functions contain machine code instructions located in SRAM1:
 * `motor_control_loop`: `0x722e` = **29,230 bytes** (from `firmware.map`)
 * `sensor_aggregate`: `0x391c` = **14,620 bytes** (from `firmware.map`)
 * `can_transmit_handler`: `0x1c94` = **7,316 bytes** (from `firmware.map`)
 
-Applying EmbedSched's analytical timing formula (`analysis/wcet_extractor.py`) at 168 MHz ($t_{\text{cycle}} = 1000/168 \approx 5.952\text{ ns}$):
+EmbedSched evaluates WCET via the **Implicit Path Enumeration Technique (IPET)** microarchitectural analysis engine (`analysis/ipet/`) for the ARM Cortex-M4 core at 168 MHz ($t_{\text{cycle}} \approx 5.952\text{ ns}$):
+- **CFG Reconstruction:** Disassembles the ELF basic blocks via Capstone. At 2 bytes per 16-bit Thumb instruction (`movs r0, r0` sequence terminated by `bx lr`), the instruction counts are:
+  - `motor_control_loop`: $29,230 / 2 = 14,615\text{ instructions}$
+  - `sensor_aggregate`: $14,620 / 2 = 7,310\text{ instructions}$
+  - `can_transmit_handler`: $7,316 / 2 = 3,658\text{ instructions}$
+- **Microarchitectural Pipeline & Memory Modeling:**
+  - Pipelined execution models instruction decode, execute, and register hazards.
+  - Flash wait states ($ws = 4$) and 128-bit wide prefetch buffer line fetches ($1 + ws = 5$ cycles per 16-byte boundary crossing / cold fetch).
+  - Terminal unconditional branch flush penalty ($1\text{ cycle}$ for Cortex-M4 direct branch).
+- **ILP Formulation (SciPy HiGHS Solver):**
+  $$\text{WCET}_{\text{cycles}} = \max \sum_{e \in E} c_e f_e \quad \text{subject to flow conservation constraints}$$
 
 1. **`Task_MotorControl` (`motor_control_loop`):**
-   $$\text{Instructions} = \frac{29,230\text{ bytes}}{2.5\text{ bytes/insn}} = 11,692\text{ instructions}$$
-   $$\text{Cycles} = \text{round}(11,692 \times 1.15\text{ CPI}) = 13,445\text{ cycles}$$
-   $$\text{WCET} = \frac{13,445 \times 5.952\text{ ns}}{1000} = 80.03\text{ µs} \xrightarrow{\text{round}} \mathbf{80.00\text{ µs}}$$
+   $$\text{Instructions} = 14,615 \implies \text{Cycles} = 23,688\text{ cycles}$$
+   $$\text{WCET} = \frac{23,688\text{ cycles}}{168\text{ MHz}} = \mathbf{141.00\text{ µs}} \quad (\text{Confidence: } [\text{IPET}])$$
 
 2. **`Task_SensorAgg` (`sensor_aggregate`):**
-   $$\text{Instructions} = \frac{14,620\text{ bytes}}{2.5\text{ bytes/insn}} = 5,848\text{ instructions}$$
-   $$\text{Cycles} = \text{round}(5,848 \times 1.15\text{ CPI}) = 6,725\text{ cycles}$$
-   $$\text{WCET} = \frac{6,725 \times 5.952\text{ ns}}{1000} = 40.03\text{ µs} \xrightarrow{\text{round}} \mathbf{40.00\text{ µs}}$$
+   $$\text{Instructions} = 7,310 \implies \text{Cycles} = 11,928\text{ cycles}$$
+   $$\text{WCET} = \frac{11,928\text{ cycles}}{168\text{ MHz}} = \mathbf{71.00\text{ µs}} \quad (\text{Confidence: } [\text{IPET}])$$
 
 3. **`Task_CANTransmit` (`can_transmit_handler`):**
-   $$\text{Instructions} = \frac{7,316\text{ bytes}}{2.5\text{ bytes/insn}} = 2,926\text{ instructions}$$
-   $$\text{Cycles} = \text{round}(2,926 \times 1.15\text{ CPI}) = 3,365\text{ cycles}$$
-   $$\text{WCET} = \frac{3,365 \times 5.952\text{ ns}}{1000} = 20.03\text{ µs} \xrightarrow{\text{round}} \mathbf{20.00\text{ µs}}$$
+   $$\text{Instructions} = 3,658 \implies \text{Cycles} = 5,880\text{ cycles}$$
+   $$\text{WCET} = \frac{5,880\text{ cycles}}{168\text{ MHz}} = \mathbf{35.00\text{ µs}} \quad (\text{Confidence: } [\text{IPET}])$$
 
 ---
 
 ### B. Processor Utilization Calculation
 Dividing each derived WCET ($C_i$) by its configured period ($T_i$):
-* $U_{\text{Motor}} = \frac{80\text{ µs}}{1,000\text{ µs}} = 8.00\%$
-* $U_{\text{Sensor}} = \frac{40\text{ µs}}{20,000\text{ µs}} = 0.20\%$
-* $U_{\text{CAN}} = \frac{20\text{ µs}}{100,000\text{ µs}} = 0.02\%$
+* $U_{\text{Motor}} = \frac{141.00\text{ µs}}{1,000\text{ µs}} = 14.10\%$
+* $U_{\text{Sensor}} = \frac{71.00\text{ µs}}{20,000\text{ µs}} = 0.355\%$
+* $U_{\text{CAN}} = \frac{35.00\text{ µs}}{100,000\text{ µs}} = 0.035\%$
 
 **Total Core 0 Utilization ($U$):**
-$$U = 8.00\% + 0.20\% + 0.02\% = \mathbf{8.22\%}$$
+$$U = 14.10\% + 0.355\% + 0.035\% = 14.49\% \approx \mathbf{14.5\%}$$
+$$\text{Duty Breakdown: Tasks } 14.5\% \mid \text{ISRs } 0.0\% \mid \text{Idle } 85.5\%$$
 
 **Liu & Layland Bound Comparison:**
 For $n = 3$ tasks:
 $$U_{\text{bound}} = 3(2^{1/3} - 1) \approx 77.98\%$$
-Since $U = 8.22\% \ll 77.98\%$, schedulability is mathematically guaranteed by the utilization bound alone.
+Since $U = 14.5\% \ll 78.0\%$, schedulability is mathematically guaranteed by the utilization bound alone.
 
 ---
 
@@ -96,38 +102,38 @@ Solving Joseph & Pandya's recurrence relation ($R_i^{(k+1)} = C_i + \sum_{j \in 
 
 1. **`Task_MotorControl` (Priority 1):**
    * Preempting tasks: None ($\text{hp}(1) = \emptyset$)
-   * Recurrence: $R_1 = C_1 = \mathbf{80.00\text{ µs}}$
-   * Slack Margin: $D_1 - R_1 = 1,000\text{ µs} - 80\text{ µs} = \mathbf{+920.00\text{ µs}}$
+   * Recurrence: $R_1 = C_1 = \mathbf{141.00\text{ µs}}$
+   * Slack Margin: $D_1 - R_1 = 1,000\text{ µs} - 141.00\text{ µs} = \mathbf{+859.00\text{ µs}}$ (`PASS`)
 
 2. **`Task_SensorAgg` (Priority 2):**
-   * Preempting tasks: `Task_MotorControl` ($C_1 = 80\text{ µs}, T_1 = 1,000\text{ µs}$)
-   * Iteration 0: $R_2^{(0)} = C_2 = 40.00\text{ µs}$
-   * Iteration 1: $R_2^{(1)} = 40 + \left\lceil \frac{40}{1,000} \right\rceil \times 80 = 40 + (1 \times 80) = 120.00\text{ µs}$
-   * Iteration 2: $R_2^{(2)} = 40 + \left\lceil \frac{120}{1,000} \right\rceil \times 80 = 40 + (1 \times 80) = \mathbf{120.00\text{ µs}}\quad (\text{Converged})$
-   * Slack Margin: $D_2 - R_2 = 20,000\text{ µs} - 120\text{ µs} = \mathbf{+19,880.00\text{ µs}}$
+   * Preempting tasks: `Task_MotorControl` ($C_1 = 141.00\text{ µs}, T_1 = 1,000\text{ µs}$)
+   * Iteration 0: $R_2^{(0)} = C_2 = 71.00\text{ µs}$
+   * Iteration 1: $R_2^{(1)} = 71.00 + \left\lceil \frac{71.00}{1,000} \right\rceil \times 141.00 = 71.00 + (1 \times 141.00) = 212.00\text{ µs}$
+   * Iteration 2: $R_2^{(2)} = 71.00 + \left\lceil \frac{212.00}{1,000} \right\rceil \times 141.00 = 71.00 + (1 \times 141.00) = \mathbf{212.00\text{ µs}}\quad (\text{Converged})$
+   * Slack Margin: $D_2 - R_2 = 20,000\text{ µs} - 212.00\text{ µs} = \mathbf{+19,788.00\text{ µs}}$ (`PASS`)
 
 3. **`Task_CANTransmit` (Priority 3):**
-   * Preempting tasks: `Task_MotorControl` ($C_1 = 80\text{ µs}, T_1 = 1,000\text{ µs}$), `Task_SensorAgg` ($C_2 = 40\text{ µs}, T_2 = 20,000\text{ µs}$)
-   * Iteration 0: $R_3^{(0)} = C_3 = 20.00\text{ µs}$
-   * Iteration 1: $R_3^{(1)} = 20 + \left\lceil \frac{20}{1,000} \right\rceil \times 80 + \left\lceil \frac{20}{20,000} \right\rceil \times 40 = 20 + 80 + 40 = 140.00\text{ µs}$
-   * Iteration 2: $R_3^{(2)} = 20 + \left\lceil \frac{140}{1,000} \right\rceil \times 80 + \left\lceil \frac{140}{20,000} \right\rceil \times 40 = 20 + 80 + 40 = \mathbf{140.00\text{ µs}}\quad (\text{Converged})$
-   * Slack Margin: $D_3 - R_3 = 100,000\text{ µs} - 140\text{ µs} = \mathbf{+99,860.00\text{ µs}}$
+   * Preempting tasks: `Task_MotorControl` ($C_1 = 141.00\text{ µs}, T_1 = 1,000\text{ µs}$), `Task_SensorAgg` ($C_2 = 71.00\text{ µs}, T_2 = 20,000\text{ µs}$)
+   * Iteration 0: $R_3^{(0)} = C_3 = 35.00\text{ µs}$
+   * Iteration 1: $R_3^{(1)} = 35.00 + \left\lceil \frac{35.00}{1,000} \right\rceil \times 141.00 + \left\lceil \frac{35.00}{20,000} \right\rceil \times 71.00 = 35.00 + 141.00 + 71.00 = 247.00\text{ µs}$
+   * Iteration 2: $R_3^{(2)} = 35.00 + \left\lceil \frac{247.00}{1,000} \right\rceil \times 141.00 + \left\lceil \frac{247.00}{20,000} \right\rceil \times 71.00 = 35.00 + 141.00 + 71.00 = \mathbf{247.00\text{ µs}}\quad (\text{Converged})$
+   * Slack Margin: $D_3 - R_3 = 100,000\text{ µs} - 247.00\text{ µs} = \mathbf{+99,753.00\text{ µs}}$ (`PASS`)
 
 ---
 
 ## 5. Expected vs Actual Tool Output
 
 ```
-====================================================================================
+==============================================================================================================
 RESPONSE TIME ANALYSIS (RTA) & SCHEDULABILITY VERDICT
-====================================================================================
-Task                    Core  Prio  Period µs   WCET µs  Blk µs       Source   WCRT µs  Deadline µs  Margin µs   Verdict
-──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-Task_MotorControl          0     1       1000     80.00    0.00   CALCULATED     80.00         1000     920.00      PASS
-Task_SensorAgg             0     2      20000     40.00    0.00   CALCULATED    120.00        20000   19880.00      PASS
-Task_CANTransmit           0     3     100000     20.00    0.00   CALCULATED    140.00       100000   99860.00      PASS
-──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-Overall: PASS [CALCULATED] — all tasks meet timing deadlines
+==============================================================================================================
+Task                    Core  Prio  Period µs   WCET µs  Blk µs       Source   WCRT µs  Deadline µs  Margin µs
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Task_MotorControl          0     1       1000    141.00    0.00         IPET    141.00         1000     859.00
+Task_SensorAgg             0     2      20000     71.00    0.00         IPET    212.00        20000   19788.00
+Task_CANTransmit           0     3     100000     35.00    0.00         IPET    247.00       100000   99753.00
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Overall: PASS [IPET] — all tasks meet deadlines
 ```
 
 - **Health Score:** 100 / 100 (Grade A)
@@ -140,10 +146,10 @@ Overall: PASS [CALCULATED] — all tasks meet timing deadlines
 
 ```bash
 python main.py \
-  --elf Test_SUITE_2/Test_1/firmware.elf \
-  --map Test_SUITE_2/Test_1/firmware.map \
-  --ld  Test_SUITE_2/Test_1/linker.ld \
-  --chip chips/stm32f407.yaml \
-  --autosar-config Test_SUITE_2/Test_1/schedule.json \
-  --charts-dir Test_SUITE_2/Test_1/charts/
+  --elf tests/Test_Suite2/Test_1/firmware.elf \
+  --map tests/Test_Suite2/Test_1/firmware.map \
+  --ld  tests/Test_Suite2/Test_1/linker.ld \
+  --chip tests/Test_Suite2/Test_1/stm32f407.yaml \
+  --autosar-config tests/Test_Suite2/Test_1/schedule.json \
+  --charts-dir tests/Test_Suite2/Test_1/charts/
 ```

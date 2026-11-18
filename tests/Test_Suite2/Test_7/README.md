@@ -1,7 +1,7 @@
 # Test Case 7: Stack Overflow Under Preemption — Cross-Domain Analysis
 
 > **Status:** `WARNING` (Concurrent Stack Overflow Risk)  
-> **Confidence:** `[STATIC]`  
+> **Confidence:** `[IPET]` / `[STATIC]`  
 > **Architecture:** STM32F407 (Cortex-M4, 168 MHz)  
 > **Scheduler:** Single-Core Preemptive Rate Monotonic (RM)
 
@@ -73,45 +73,44 @@ The concurrent worst-case stack depth **exceeds declared stack capacity by 32 by
 
 ---
 
-### B. Timing & Schedulability Verification
-
-In parallel with stack analysis, the tool verifies task execution timing from [firmware.map](file:///e:/firmware_analyzer/Test_SUITE_2/Test_7/firmware.map) at $168\text{ MHz}$:
-- `motor_control_loop`: $29,230\text{ bytes} \implies C = 80.00\text{ µs}$ ($T = 1,000\text{ µs}, U = 8.00\%$)
-- `sensor_aggregate`: $14,620\text{ bytes} \implies C = 40.00\text{ µs}$ ($T = 20,000\text{ µs}, U = 0.20\%$)
-- `can_transmit_handler`: $7,316\text{ bytes} \implies C = 20.00\text{ µs}$ ($T = 100,000\text{ µs}, U = 0.02\%$)
+### B. Timing & Schedulability Verification (IPET)
+In parallel with stack analysis, the tool verifies task execution timing from the binary via IPET at $168\text{ MHz}$:
+- `motor_control_loop`: $\text{WCET} = \mathbf{142.00\text{ µs}}$ ($T = 1,000\text{ µs}, U = 14.20\%$)
+- `sensor_aggregate`: $\text{WCET} = \mathbf{71.00\text{ µs}}$ ($T = 20,000\text{ µs}, U = 0.355\%$)
+- `can_transmit_handler`: $\text{WCET} = \mathbf{36.00\text{ µs}}$ ($T = 100,000\text{ µs}, U = 0.036\%$)
 
 Total system utilization:
-$$U = 8.00\% + 0.20\% + 0.02\% = 8.22\% \ll U_{\text{bound}} = 77.98\%$$
+$$U = 14.20\% + 0.355\% + 0.036\% = \mathbf{14.6\%} \ll U_{\text{bound}} = 78.0\%$$
 
 RTA recurrence:
-- $R_{\text{Motor}} = 80.00\text{ µs} \le 1,000\text{ µs}$ (`PASS`, margin $+920\text{ µs}$)
-- $R_{\text{Sensor}} = 40 + \lceil 40/1000 \rceil \times 80 = 120.00\text{ µs} \le 20,000\text{ µs}$ (`PASS`, margin $+19,880\text{ µs}$)
-- $R_{\text{CAN}} = 20 + \lceil 20/1000 \rceil \times 80 + \lceil 20/20000 \rceil \times 40 = 140.00\text{ µs} \le 100,000\text{ µs}$ (`PASS`, margin $+99,860\text{ µs}$)
+- $R_{\text{Motor}} = \mathbf{142.00\text{ µs}} \le 1,000\text{ µs}$ (`PASS`, margin $+858.00\text{ µs}$)
+- $R_{\text{Sensor}} = 71.00 + \lceil 71/1000 \rceil \times 142.00 = \mathbf{213.00\text{ µs}} \le 20,000\text{ µs}$ (`PASS`, margin $+19,787.00\text{ µs}$)
+- $R_{\text{CAN}} = 36.00 + \lceil 36/1000 \rceil \times 142.00 + \lceil 36/20000 \rceil \times 71.00 = \mathbf{249.00\text{ µs}} \le 100,000\text{ µs}$ (`PASS`, margin $+99,751.00\text{ µs}$)
 
-**Engineering Takeaway:** All tasks meet their real-time timing deadlines with massive margins (Score: 80/100), yet the firmware will fail catastrophically in production due to concurrent stack overflow. Only a unified timing and memory analyzer can detect this.
+**Engineering Takeaway:** All tasks meet their real-time timing deadlines with massive margins (Score: 80/100), yet the firmware will fail in production due to concurrent stack overflow. Only a unified timing and memory analyzer can detect this.
 
 ---
 
 ## 5. Expected vs Actual Tool Output
 
 ```
-====================================================================================
+==============================================================================================================
 RESPONSE TIME ANALYSIS (RTA) & SCHEDULABILITY VERDICT
-====================================================================================
-Task                    Core  Prio  Period µs   WCET µs  Blk µs       Source   WCRT µs  Deadline µs  Margin µs   Verdict
-──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-Task_CANTransmit           0     3     100000     20.00    0.00   CALCULATED    140.00       100000   99860.00      PASS
-Task_SensorAgg             0     2      20000     40.00    0.00   CALCULATED    120.00        20000   19880.00      PASS
-Task_MotorControl          0     1       1000     80.00    0.00   CALCULATED     80.00         1000     920.00      PASS
-──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-Overall: PASS [CALCULATED] — all tasks meet timing deadlines
+==============================================================================================================
+Task                    Core  Prio  Period µs   WCET µs  Blk µs       Source   WCRT µs  Deadline µs  Margin µs
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Task_MotorControl          0     1       1000    142.00    0.00         IPET    142.00         1000     858.00
+Task_SensorAgg             0     2      20000     71.00    0.00         IPET    213.00        20000   19787.00
+Task_CANTransmit           0     3     100000     36.00    0.00         IPET    249.00       100000   99751.00
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Overall: PASS [IPET] — all tasks meet deadlines
 ```
 
 ### Generated Findings:
-- **`[WARNING] autosar_concurrent_stack` (-20 points):**  
+- **`[WARNING] [STATIC] autosar_concurrent_stack` (-20 points):**  
   *Concurrent worst-case stack depth (4128B) exceeds declared stack size (4096B) — stack overflow possible under full preemption [STATIC].*  
   *Fix: Increase `_Min_Stack_Size` in `linker.ld` to at least `0x1100` (4352 bytes) or reduce local buffer allocations.*
-- **`[INFO] explicit_stack_found`:**  
+- **`[INFO] [STATIC] explicit_stack_found`:**  
   *Explicit stack reservation found. `_Min_Stack_Size` = 0x1000 (4096 bytes).*
 
 ---
@@ -120,10 +119,10 @@ Overall: PASS [CALCULATED] — all tasks meet timing deadlines
 
 ```bash
 python main.py \
-  --elf Test_SUITE_2/Test_7/firmware.elf \
-  --map Test_SUITE_2/Test_7/firmware.map \
-  --ld  Test_SUITE_2/Test_7/linker.ld \
-  --chip chips/stm32f407.yaml \
-  --autosar-config Test_SUITE_2/Test_7/schedule.json \
-  --charts-dir Test_SUITE_2/Test_7/charts/
+  --elf tests/Test_Suite2/Test_7/firmware.elf \
+  --map tests/Test_Suite2/Test_7/firmware.map \
+  --ld  tests/Test_Suite2/Test_7/linker.ld \
+  --chip tests/Test_Suite2/Test_7/stm32f407.yaml \
+  --autosar-config tests/Test_Suite2/Test_7/schedule.json \
+  --charts-dir tests/Test_Suite2/Test_7/charts/
 ```

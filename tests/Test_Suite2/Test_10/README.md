@@ -1,7 +1,7 @@
 # Test Case 10: Cross-Core Resource Sharing — Circular Deadlock Risk
 
 > **Status:** `PASS` Timing Deadlines / `CRITICAL: DEADLOCK_RISK DETECTED`  
-> **Confidence:** `[STATIC]`  
+> **Confidence:** `[IPET-CONSERVATIVE]` / `[STATIC]`  
 > **Architecture:** STM32H745 (Dual-Core: Cortex-M7 @ 480 MHz + Cortex-M4 @ 240 MHz)  
 > **Rule:** `autosar_deadlock_risk`
 
@@ -66,20 +66,17 @@ Notice the inverted acquisition sequence:
 
 ## 4. Step-by-Step Mathematical Calculations
 
-### A. Binary Artifact Inspection & WCET Derivation
-The static analyzer inspects [firmware.map](file:///e:/firmware_analyzer/Test_SUITE_2/Test_10/firmware.map):
-- `task_core0_alpha`: Symbol size `0x28` bytes = $40\text{ bytes}$
-  $$\text{Instructions} = \frac{40}{2.5} = 16\text{ instructions}$$
-  $$\text{Cycles} = 16 \times 1.15 \approx 18.4\text{ cycles}$$
-  $$C_{\text{Alpha}} \approx 0.20\text{ µs}$$
-- `task_core1_beta`: Symbol size `0x28` bytes = $40\text{ bytes}$
-  $$C_{\text{Beta}} \approx 0.20\text{ µs}$$
+### A. Binary Artifact Inspection & IPET WCET Derivation
+The static analyzer inspects `firmware.map` and applies IPET microarchitectural timing:
+- Because spinlocks contain polling loops that cannot be statically resolved without loop bound annotations, EmbedSched applies the conservative loop bound fallback tier (`[IPET-CONSERVATIVE]`):
+  $$\text{WCET}_{\text{Alpha}} = \mathbf{114.00\text{ µs}} \quad (\text{Confidence: } [\text{IPET-CONSERVATIVE}])$$
+  $$\text{WCET}_{\text{Beta}} = \mathbf{114.00\text{ µs}} \quad (\text{Confidence: } [\text{IPET-CONSERVATIVE}])$$
 
 ### B. Timing Schedulability (The False Positive)
-- `Task_Core0_Alpha` (Core 0): $T = 10,000\text{ µs}, D = 10,000\text{ µs}, C = 0.20\text{ µs} \implies R_{\text{Alpha}} = 0.20\text{ µs} \le 10,000\text{ µs}$ (`PASS`)
-- `Task_Core1_Beta` (Core 1): $T = 20,000\text{ µs}, D = 20,000\text{ µs}, C = 0.20\text{ µs} \implies R_{\text{Beta}} = 0.20\text{ µs} \le 20,000\text{ µs}$ (`PASS`)
+- `Task_Core0_Alpha` (Core 0): $T = 10,000\text{ µs}, D = 10,000\text{ µs}, C = 114.00\text{ µs} \implies R_{\text{Alpha}} = 114.00\text{ µs} \le 10,000\text{ µs}$ (`PASS`, margin $+9,886.00\text{ µs}$)
+- `Task_Core1_Beta` (Core 1): $T = 20,000\text{ µs}, D = 20,000\text{ µs}, C = 114.00\text{ µs} \implies R_{\text{Beta}} = 114.00\text{ µs} \le 20,000\text{ µs}$ (`PASS`, margin $+19,886.00\text{ µs}$)
 
-Pure timing analysis reports 100% schedulability with huge slack margins (+9,999.8 µs and +19,999.8 µs).
+Pure timing analysis reports 100% schedulability with huge slack margins.
 
 ### C. Directed Lock-Dependency Graph & Cycle Detection Math
 
@@ -128,14 +125,23 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
   ────────────────────────────────────────────────────────────────────────────────────
   Task                    Period µs   WCET µs      R µs      D µs   Margin µs  Verdict
   ────────────────────────────────────────────────────────────────────────────────────
-  Task_Core0_Alpha            10000      0.20      0.20     10000     9999.80     PASS
-  Task_Core1_Beta             20000      0.20      0.20     20000    19999.80     PASS
+  Task_Core0_Alpha            10000    114.00    114.00     10000     9886.00     PASS
+  Task_Core1_Beta             20000    114.00    114.00     20000    19886.00     PASS
   ────────────────────────────────────────────────────────────────────────────────────
-  Overall: PASS [CALCULATED] — all tasks meet timing deadlines  ⚠ DEADLOCK_RISK DETECTED
+  Overall: PASS [IPET-CONSERVATIVE] — all tasks meet timing deadlines  ⚠ DEADLOCK_RISK DETECTED
+
+
+3. RESPONSE TIME ANALYSIS TABLE
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Task                    Core  Prio  Period µs   WCET µs  Blk µs       Source   WCRT µs  Deadline µs  Margin µs
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Task_Core0_Alpha           0     1      10000    114.00    0.00 IPET-CONSERVATIVE    114.00        10000    9886.00
+  Task_Core1_Beta            1     1      20000    114.00    0.00 IPET-CONSERVATIVE    114.00        20000   19886.00
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ```
 
 ### Generated Finding:
-- **`[CRITICAL] autosar_deadlock_risk` (-30 points):**  
+- **`[CRITICAL] [STATIC] autosar_deadlock_risk` (-30 points):**  
   *Deadlock risk detected — inconsistent lock acquisition order across tasks. Lock cycle: `mutex_A → mutex_B → mutex_A`.*  
   *Fix: Impose a global total order on all locks (e.g., alphabetical or by ID). Every task must acquire locks in that order.*
 
@@ -145,10 +151,10 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
 
 ```bash
 python main.py \
-  --elf Test_SUITE_2/Test_10/firmware.elf \
-  --map Test_SUITE_2/Test_10/firmware.map \
-  --ld  Test_SUITE_2/Test_10/linker.ld \
-  --chip chips/stm32f407.yaml \
-  --autosar-config Test_SUITE_2/Test_10/schedule.json \
-  --charts-dir Test_SUITE_2/Test_10/charts/
+  --elf tests/Test_Suite2/Test_10/firmware.elf \
+  --map tests/Test_Suite2/Test_10/firmware.map \
+  --ld  tests/Test_Suite2/Test_10/linker.ld \
+  --chip tests/Test_Suite2/Test_10/stm32f407.yaml \
+  --autosar-config tests/Test_Suite2/Test_10/schedule.json \
+  --charts-dir tests/Test_Suite2/Test_10/charts/
 ```

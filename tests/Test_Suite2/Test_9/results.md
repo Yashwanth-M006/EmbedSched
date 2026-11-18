@@ -106,7 +106,7 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
   Task_B           [B] █░░░░░░░░░░░░░░░░░░░░░░█░░░░░░░░░░░░░░░░░░░░░░██░░░░░░░░░░░░░░░░
   Task_C           [C] █░░░░░░░░░░░░░░░░░░░░░░░░░░█░░░░░░░░░░░░░░░░░░░░░░░░░░░█░░░░░░░░
   Task_D           [D] █░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░█░░░░░░░░░░░░░░░░░░░░░░░░░░░
-  Task_E           [E] █░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░█░░░░░░░░░░░░░░░░░░░░░░░
+  Task_E           [E] ██░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░█░░░░░░░░░░░░░░░░░░░░░░░
                          0         5000       10000      15000     20000      25000      
 
   Legend:  █ = executing   ░ = idle   > = preemption point
@@ -126,10 +126,10 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
   Task                    Activations  Max Jitter µs  Mean Jitter µs Assessment
   ────────────────────────────────────────────────────────────────────────────
   Task_A                            5           0.00            0.00  EXCELLENT (<1% of period)
-  Task_B                            3          92.53           30.84  EXCELLENT (<1% of period)
-  Task_C                            3         186.22           62.07  GOOD (<5% of period)
-  Task_D                            2         276.08          138.04  GOOD (<5% of period)
-  Task_E                            2         365.74          182.87  GOOD (<5% of period)
+  Task_B                            3          95.36           31.79  EXCELLENT (<1% of period)
+  Task_C                            3         194.80           64.93  GOOD (<5% of period)
+  Task_D                            2         294.13          147.06  GOOD (<5% of period)
+  Task_E                            2         394.06          197.03  GOOD (<5% of period)
   ────────────────────────────────────────────────────────────────────────────
   NOTE: Jitter is measured against the ideal periodic release time.
   Non-zero jitter is caused by higher-priority task preemption.

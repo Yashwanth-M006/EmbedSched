@@ -146,8 +146,8 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
 
   CORE 0  |  Hyperperiod: 40000 µs  (scale: 625.0 µs/char)
   ────────────────────────────────────────────────────────────────────────────────────────
-  Task_A           [A] ████████░░░░░░░░░░░░████████░░░░█████████░░░░░░░░░░░░░░░░░░░░░░░
-  Task_B           [B] ░░░░░░░██████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░█████████
+  Task_A           [A] █████████░░░░░░░░░░░████████░░░░█████████░░░░░░░░░░░░░░░░░░░░░░░
+  Task_B           [B] ░░░░░░░░█████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░█████████
   Task_C           [C] ░░░░░░░░░░░░░░░░░░░░░░░░░░░█████>░░░░░░░████████[91m|[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m░░░░░░░░
                          0       5000    10000   15000   20000   25000   30000   35000   
 
@@ -159,7 +159,7 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
     [C]  Task_C
 
   DEADLINE MISSES (1 events):
-    [MISS]  Task_C               released @ 0 µs,  deadline @ 30000 µs,  finished @ 34850.82 µs  (+4850.82 µs late)
+    [MISS]  Task_C               released @ 0 µs,  deadline @ 30000 µs,  finished @ 34683.86 µs  (+4683.86 µs late)
 
 5. JITTER ANALYSIS
 
@@ -168,9 +168,9 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
   ────────────────────────────────────────────────────────────────────────────
   Task                    Activations  Max Jitter µs  Mean Jitter µs Assessment
   ────────────────────────────────────────────────────────────────────────────
-  Task_A                            3        2762.79          920.93  HIGH (>20% of period
-  Task_B                            2       14850.82         9709.55  HIGH (>20% of period
-  Task_C                            1       17368.09        17368.09  HIGH (>20% of period
+  Task_A                            3        2680.81          893.60  HIGH (>20% of period
+  Task_B                            2       14683.86         9884.50  HIGH (>20% of period
+  Task_C                            1       17214.73        17214.73  HIGH (>20% of period
   ────────────────────────────────────────────────────────────────────────────
   NOTE: Jitter is measured against the ideal periodic release time.
   Non-zero jitter is caused by higher-priority task preemption.

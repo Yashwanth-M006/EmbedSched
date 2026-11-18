@@ -472,3 +472,8 @@ def lowest_confidence_tag(tags: set) -> str:
         if t in tags:
             return t
     return "[IPET]"
+
+
+# Backward-compatibility alias
+extract_wcets_for_tasks = extract_wcets
+

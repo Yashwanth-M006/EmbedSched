@@ -112,7 +112,7 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
   ────────────────────────────────────────────────────────────────────────────
   Task                    Activations  Max Jitter µs  Mean Jitter µs Assessment
   ────────────────────────────────────────────────────────────────────────────
-  Task_CANTransmit                  1          63.47           63.47  EXCELLENT (<1% of period)
+  Task_CANTransmit                  1          69.43           69.43  EXCELLENT (<1% of period)
   Task_SensorAgg                    5           0.00            0.00  EXCELLENT (<1% of period)
   ────────────────────────────────────────────────────────────────────────────
   NOTE: Jitter is measured against the ideal periodic release time.

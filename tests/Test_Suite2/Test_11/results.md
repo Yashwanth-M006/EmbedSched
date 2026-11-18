@@ -123,8 +123,8 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
   Task                    Activations  Max Jitter µs  Mean Jitter µs Assessment
   ────────────────────────────────────────────────────────────────────────────
   Task_A                            4           0.00            0.00  EXCELLENT (<1% of period)
-  Task_B                            2           6.56            6.50  EXCELLENT (<1% of period)
-  Task_C                            1          10.25           10.25  EXCELLENT (<1% of period)
+  Task_B                            2           6.23            6.13  EXCELLENT (<1% of period)
+  Task_C                            1          10.06           10.06  EXCELLENT (<1% of period)
   ────────────────────────────────────────────────────────────────────────────
   NOTE: Jitter is measured against the ideal periodic release time.
   Non-zero jitter is caused by higher-priority task preemption.

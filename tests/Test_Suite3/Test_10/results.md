@@ -114,8 +114,8 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
   CORE 0  |  Hyperperiod: 60000 µs  (scale: 937.5 µs/char)
   ────────────────────────────────────────────────────────────────────────────────────────
   tau1             [A] ████░░░░░░█████░░░░░░████░░░░░░░████░░░░░░█████░░░░░░████░░░░░░░
-  tau2             [B] ░░░██████░░░░░░░██████░░░░░░░░░░░░░██████░░░░░░░█████░░░░░░░░░░░
-  tau3             [C] ░░░░░░░░███>░░██>░░░░[91m|[0m[91m>[0m░[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m>[0m░░░░░░░[91m█[0m[91m█[0m[91m|[0m[91m>[0m░░[91m█[0m[91m█[0m[91m>[0m░░░[91m█[0m[91m█[0m[91m>[0m░[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m░░
+  tau2             [B] ░░░██████░░░░░░░██████░░░░░░░░░░░░░██████░░░░░░░██████░░░░░░░░░░
+  tau3             [C] ░░░░░░░░███>░░██>░░░░[91m|[0m[91m>[0m░[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m>[0m░░░░░░░[91m█[0m[91m█[0m[91m|[0m[91m>[0m░░[91m█[0m[91m█[0m[91m>[0m░░░░[91m█[0m[91m>[0m░[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m░
                          0         10000      20000      30000     40000      50000      
 
   Legend:  █ = executing   ░ = idle   > = preemption point
@@ -126,8 +126,8 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
     [C]  tau3
 
   DEADLINE MISSES (2 events):
-    [MISS]  tau3                 released @ 0 µs,  deadline @ 20000 µs,  finished @ 25677.91 µs  (+5677.91 µs late)
-    [MISS]  tau3                 released @ 20000 µs,  deadline @ 40000 µs,  finished @ 44124.78 µs  (+4124.78 µs late)
+    [MISS]  tau3                 released @ 0 µs,  deadline @ 20000 µs,  finished @ 26445.27 µs  (+6445.27 µs late)
+    [MISS]  tau3                 released @ 20000 µs,  deadline @ 40000 µs,  finished @ 44436.90 µs  (+4436.90 µs late)
 
 5. JITTER ANALYSIS
 
@@ -137,8 +137,8 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
   Task                    Activations  Max Jitter µs  Mean Jitter µs Assessment
   ────────────────────────────────────────────────────────────────────────────
   tau1                              6           0.00            0.00  EXCELLENT (<1% of period)
-  tau2                              4        3182.54         1550.02  HIGH (>20% of period
-  tau3                              3        7706.49         5836.40  HIGH (>20% of period
+  tau2                              4        3391.19         1633.30  HIGH (>20% of period
+  tau3                              3        8208.98         6363.72  HIGH (>20% of period
   ────────────────────────────────────────────────────────────────────────────
   NOTE: Jitter is measured against the ideal periodic release time.
   Non-zero jitter is caused by higher-priority task preemption.

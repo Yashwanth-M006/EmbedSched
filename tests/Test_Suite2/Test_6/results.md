@@ -133,10 +133,10 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
   ────────────────────────────────────────────────────────────────────────────
   Task                    Activations  Max Jitter µs  Mean Jitter µs Assessment
   ────────────────────────────────────────────────────────────────────────────
-  Task_CANTransmit                  1         187.05          187.05  EXCELLENT (<1% of period)
+  Task_CANTransmit                  1         203.96          203.96  EXCELLENT (<1% of period)
   Task_ISR_ADC                    100           0.00            0.00  EXCELLENT (<1% of period)
   Task_MotorControl               100           0.74            0.68  EXCELLENT (<1% of period)
-  Task_SensorAgg                    5         141.29          131.36  EXCELLENT (<1% of period)
+  Task_SensorAgg                    5         139.84          131.16  EXCELLENT (<1% of period)
   ────────────────────────────────────────────────────────────────────────────
   NOTE: Jitter is measured against the ideal periodic release time.
   Non-zero jitter is caused by higher-priority task preemption.

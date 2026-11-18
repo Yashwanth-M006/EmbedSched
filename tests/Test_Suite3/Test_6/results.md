@@ -139,8 +139,8 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
 
   CORE 0  |  Hyperperiod: 30000 µs  (scale: 468.8 µs/char)
   ────────────────────────────────────────────────────────────────────────────────────────
-  tau1             [A] ███████░░░░░░░░░░██████[91m|[0m[91m█[0m[91m█[0m░░░░░░░░[91m█[0m[91m█[0m[91m|[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m░░░░░░░░░░[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m
-  tau2             [B] ░░░░░░████████[91m|[0m[91m█[0m[91m█[0m[91m█[0m░░░░░░░[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m░░░░░░░░░░░░░[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m|[0m[91m█[0m[91m█[0m░░░░
+  tau1             [A] ████████░░░░░░░░░░█████[91m|[0m[91m█[0m[91m█[0m░░░░░░░░░[91m█[0m[91m|[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m░░░░░░░░░░[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m
+  tau2             [B] ░░░░░░░███████[91m|[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m░░░░░░[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m░░░░░░░░░░░░[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m█[0m[91m|[0m[91m█[0m[91m█[0m░░░░
                          0         5000       10000      15000     20000      25000      
 
   Legend:  █ = executing   ░ = idle   > = preemption point
@@ -150,10 +150,10 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
     [B]  tau2
 
   DEADLINE MISSES (4 events):
-    [MISS]  tau2                 released @ 0 µs,  deadline @ 7000 µs,  finished @ 8387.44 µs  (+1387.44 µs late)
-    [MISS]  tau1                 released @ 6000 µs,  deadline @ 11000 µs,  finished @ 11819.88 µs  (+819.88 µs late)
-    [MISS]  tau1                 released @ 12000 µs,  deadline @ 17000 µs,  finished @ 19688.81 µs  (+2688.81 µs late)
-    [MISS]  tau2                 released @ 20000 µs,  deadline @ 27000 µs,  finished @ 27899.13 µs  (+899.13 µs late)
+    [MISS]  tau2                 released @ 0 µs,  deadline @ 7000 µs,  finished @ 8509.91 µs  (+1509.91 µs late)
+    [MISS]  tau1                 released @ 6000 µs,  deadline @ 11000 µs,  finished @ 11987.20 µs  (+987.20 µs late)
+    [MISS]  tau1                 released @ 12000 µs,  deadline @ 17000 µs,  finished @ 19607.37 µs  (+2607.37 µs late)
+    [MISS]  tau2                 released @ 20000 µs,  deadline @ 27000 µs,  finished @ 27882.77 µs  (+882.77 µs late)
 
 5. JITTER ANALYSIS
 
@@ -162,8 +162,8 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
   ────────────────────────────────────────────────────────────────────────────
   Task                    Activations  Max Jitter µs  Mean Jitter µs Assessment
   ────────────────────────────────────────────────────────────────────────────
-  tau1                              5        4325.56         2460.19  HIGH (>20% of period
-  tau2                              3        3234.84         2648.84  HIGH (>20% of period
+  tau1                              5        4543.59         2508.73  HIGH (>20% of period
+  tau2                              3        3444.28         2763.40  HIGH (>20% of period
   ────────────────────────────────────────────────────────────────────────────
   NOTE: Jitter is measured against the ideal periodic release time.
   Non-zero jitter is caused by higher-priority task preemption.

@@ -1,7 +1,7 @@
 # Test Case 12: Firmware vs Schedule Mismatch — Levenshtein Typo Detection
 
 > **Status:** `CRITICAL ERROR` (Entry Function Typo Detected)  
-> **Confidence:** `[STATIC]`  
+> **Confidence:** `[IPET]` / `[STATIC]`  
 > **Architecture:** STM32F407 (Cortex-M4, 168 MHz)  
 > **Rule:** `autosar_entry_function_mismatch`
 
@@ -25,7 +25,7 @@ This test proves that EmbedSched:
 - Computes **Levenshtein edit distances** against all valid firmware symbols.
 - Automatically suggests the closest matching function name.
 - Excludes the invalid task from schedulability calculations so false timing claims are never made.
-- Exits with a non-zero exit code to block broken configurations from merging in CI/CD pipelines.
+- Emits a critical diagnostic finding and applies an appropriate safety deduction.
 
 ---
 
@@ -78,20 +78,18 @@ Task `Task_MotorControl` is marked invalid and **excluded from schedulability an
 
 ---
 
-### B. Binary Artifact Inspection & WCET of Valid Tasks
-The static analyzer inspects [firmware.map](file:///e:/firmware_analyzer/Test_SUITE_2/Test_12/firmware.map) at $168\text{ MHz}$ for the remaining valid tasks:
+### B. Binary Artifact Inspection & IPET WCET of Valid Tasks
+The static analyzer inspects `firmware.map` and applies IPET microarchitectural timing at $168\text{ MHz}$ ($ws = 4$):
 
-#### 1. Task_SensorAgg (`sensor_aggregate`):
-* Symbol size in `.text.sensor_aggregate`: `0x391c` bytes = $14,620\text{ bytes}$
-$$\text{Instructions} = \frac{14,620}{2.5} = 5,848.0\text{ instructions}$$
-$$\text{Cycles} = 5,848.0 \times 1.15 = 6,725.2\text{ cycles}$$
-$$C_{\text{Sensor}} = \frac{6,725.2}{168\text{ MHz}} \approx 40.00\text{ µs}$$
+1. **`Task_SensorAgg` (`sensor_aggregate`):**
+   * Symbol size: `0x391c` = $14,620\text{ bytes} \implies 7,310\text{ instructions}$
+   * Pipelined execution & Flash fetch cycles: $11,928\text{ cycles}$
+   * $C_{\text{Sensor}} = \frac{11,928}{168\text{ MHz}} = \mathbf{71.00\text{ µs}} \quad (\text{Confidence: } [\text{IPET}])$
 
-#### 2. Task_CANTransmit (`can_transmit_handler`):
-* Symbol size in `.text.can_transmit_handler`: `0x1c94` bytes = $7,316\text{ bytes}$
-$$\text{Instructions} = \frac{7,316}{2.5} = 2,926.4\text{ instructions}$$
-$$\text{Cycles} = 2,926.4 \times 1.15 = 3,365.36\text{ cycles}$$
-$$C_{\text{CAN}} = \frac{3,365.36}{168\text{ MHz}} \approx 20.00\text{ µs}$$
+2. **`Task_CANTransmit` (`can_transmit_handler`):**
+   * Symbol size: `0x1c94` = $7,316\text{ bytes} \implies 3,658\text{ instructions}$
+   * Pipelined execution & Flash fetch cycles: $5,880\text{ cycles}$
+   * $C_{\text{CAN}} = \frac{5,880}{168\text{ MHz}} = \mathbf{35.00\text{ µs}} \quad (\text{Confidence: } [\text{IPET}])$
 
 ---
 
@@ -99,23 +97,22 @@ $$C_{\text{CAN}} = \frac{3,365.36}{168\text{ MHz}} \approx 20.00\text{ µs}$$
 
 Because `Task_MotorControl` is excluded, the partial system contains only `Task_SensorAgg` (Priority 2) and `Task_CANTransmit` (Priority 3):
 
-#### 1. Task_SensorAgg ($T = 20,000\text{ µs}, D = 20,000\text{ µs}$):
-* Without `Task_MotorControl`, $hp(\text{Sensor}) = \emptyset$.
-* $R_{\text{Sensor}} = C_{\text{Sensor}} = 40.00\text{ µs} \le 20,000\text{ µs}$  
-* **Margin:** $20,000 - 40.00 = +19,960.00\text{ µs}$ (`PASS`)
+1. **`Task_SensorAgg` ($T = 20,000\text{ µs}, D = 20,000\text{ µs}$):**
+   * Without `Task_MotorControl`, $\text{hp}(\text{Sensor}) = \emptyset$.
+   * $R_{\text{Sensor}} = C_{\text{Sensor}} = \mathbf{71.00\text{ µs}} \le 20,000\text{ µs}$  
+   * **Slack Margin:** $20,000 - 71.00 = \mathbf{+19,929.00\text{ µs}}$ (`PASS`)
 
-#### 2. Task_CANTransmit ($T = 100,000\text{ µs}, D = 100,000\text{ µs}$):
-* $hp(\text{CAN}) = \{\text{Task\_SensorAgg}\}$
-* Recurrence iterations:
-  $$R_{\text{CAN}}^{(0)} = C_{\text{CAN}} = 20.00\text{ µs}$$
-  $$R_{\text{CAN}}^{(1)} = 20.00 + \left\lceil \frac{20.00}{20,000} \right\rceil \times 40.00 = 20.00 + (1 \times 40.00) = 60.00\text{ µs}$$
-  $$R_{\text{CAN}}^{(2)} = 20.00 + \left\lceil \frac{60.00}{20,000} \right\rceil \times 40.00 = 60.00\text{ µs} \quad (\text{Converged})$$
-* **Margin:** $100,000 - 60.00 = +99,940.00\text{ µs}$ (`PASS`)
+2. **`Task_CANTransmit` ($T = 100,000\text{ µs}, D = 100,000\text{ µs}$):**
+   * $\text{hp}(\text{CAN}) = \{\text{Task\_SensorAgg}\}$
+   * Recurrence iterations:
+     $$R_{\text{CAN}}^{(0)} = C_{\text{CAN}} = 35.00\text{ µs}$$
+     $$R_{\text{CAN}}^{(1)} = 35.00 + \left\lceil \frac{35.00}{20,000} \right\rceil \times 71.00 = 35.00 + 71.00 = \mathbf{106.00\text{ µs}}\quad (\text{Converged})$$
+   * **Slack Margin:** $100,000 - 106.00 = \mathbf{+99,894.00\text{ µs}}$ (`PASS`)
 
 #### Contrast with Full System Schedulability:
-If `Task_MotorControl` ($C = 80.00\text{ µs}, T = 1,000\text{ µs}$) were correctly named and included:
-* $R_{\text{Sensor}} = 40 + \lceil 40/1000 \rceil \times 80 = 120.00\text{ µs}$ (3x higher latency!)
-* $R_{\text{CAN}} = 20 + \lceil 20/1000 \rceil \times 80 + \lceil 20/20000 \rceil \times 40 = 140.00\text{ µs}$ (2.3x higher latency!)
+If `Task_MotorControl` ($C = 141.00\text{ µs}, T = 1,000\text{ µs}$) were correctly named and included:
+* $R_{\text{Sensor}} = 71 + \lceil 71/1000 \rceil \times 141 = \mathbf{212.00\text{ µs}}$
+* $R_{\text{CAN}} = 35 + \lceil 35/1000 \rceil \times 141 + \lceil 35/20000 \rceil \times 71 = \mathbf{247.00\text{ µs}}$
 
 This contrast proves why EmbedSched treats symbol mismatches as a `CRITICAL` finding (-25 pts) and forces non-zero exit codes: omitting a task invalidates the entire real-time schedule.
 
@@ -124,28 +121,23 @@ This contrast proves why EmbedSched treats symbol mismatches as a `CRITICAL` fin
 ## 5. Expected vs Actual Tool Output
 
 ```
-====================================================================================
-CONFIG DIAGNOSTIC ERROR
-====================================================================================
-Error: Task_MotorControl: entry function 'motor_controll_loop' not found in firmware symbols
-Did you mean 'motor_control_loop'? (Levenshtein distance: 1)
-
-[CRITICAL] [STATIC] autosar_entry_function_mismatch
-  Error: Task_MotorControl: entry function 'motor_controll_loop' not found in firmware symbols.
-    Did you mean 'motor_control_loop'? (Levenshtein distance: 1)
-    Task 'Task_MotorControl' is excluded from schedulability analysis.
-  Fix: Update schedule.json: change entry_function from 'motor_controll_loop' to 'motor_control_loop'.
-
-====================================================================================
+==============================================================================================================
 RESPONSE TIME ANALYSIS (RTA) & SCHEDULABILITY VERDICT
-====================================================================================
-Task                    Core  Prio  Period µs   WCET µs  Blk µs       Source   WCRT µs  Deadline µs  Margin µs   Verdict
-──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-Task_CANTransmit           0     3     100000     20.00    0.00   CALCULATED     60.00       100000   99940.00      PASS
-Task_SensorAgg             0     2      20000     40.00    0.00   CALCULATED     40.00        20000   19960.00      PASS
-──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-Overall: PASS [CALCULATED] — all tasks meet deadlines
+==============================================================================================================
+Task                    Core  Prio  Period µs   WCET µs  Blk µs       Source   WCRT µs  Deadline µs  Margin µs
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Task_SensorAgg             0     2      20000     71.00    0.00         IPET     71.00        20000   19929.00
+Task_CANTransmit           0     3     100000     35.00    0.00         IPET    106.00       100000   99894.00
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Overall: PASS [IPET] — all tasks meet deadlines
 ```
+
+### Generated Findings:
+- **`[CRITICAL] [STATIC] autosar_entry_function_mismatch` (-25 points):**  
+  *Error: Task_MotorControl: entry function 'motor_controll_loop' not found in firmware symbols.*  
+  *Did you mean 'motor_control_loop'? (Levenshtein distance: 1)*  
+  *Task 'Task_MotorControl' is excluded from schedulability analysis.*  
+  *Fix: Update schedule.json: change entry_function from 'motor_controll_loop' to 'motor_control_loop'.*
 
 ---
 
@@ -153,10 +145,10 @@ Overall: PASS [CALCULATED] — all tasks meet deadlines
 
 ```bash
 python main.py \
-  --elf Test_SUITE_2/Test_12/firmware.elf \
-  --map Test_SUITE_2/Test_12/firmware.map \
-  --ld  Test_SUITE_2/Test_12/linker.ld \
-  --chip chips/stm32f407.yaml \
-  --autosar-config Test_SUITE_2/Test_12/schedule.json \
-  --charts-dir Test_SUITE_2/Test_12/charts/
+  --elf tests/Test_Suite2/Test_12/firmware.elf \
+  --map tests/Test_Suite2/Test_12/firmware.map \
+  --ld  tests/Test_Suite2/Test_12/linker.ld \
+  --chip tests/Test_Suite2/Test_12/stm32f407.yaml \
+  --autosar-config tests/Test_Suite2/Test_12/schedule.json \
+  --charts-dir tests/Test_Suite2/Test_12/charts/
 ```

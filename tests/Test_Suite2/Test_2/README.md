@@ -1,7 +1,7 @@
-# Test Case 2: Rate Monotonic Utilization Boundary — The Tipping Point
+# Test Case 2: Rate Monotonic High Load & Processor Overload Stress
 
-> **Status:** `PASS` (with Schedulability Warning)  
-> **Confidence:** `[CALCULATED]`  
+> **Status:** `FAIL` (Deadline Misses & CPU Overload Detected)  
+> **Confidence:** `[IPET]`  
 > **Architecture:** STM32F407 (Cortex-M4, 168 MHz)  
 > **Scheduler:** Single-Core Preemptive Rate Monotonic (RM)
 
@@ -9,176 +9,135 @@
 
 ## 1. What This Test Signifies
 
-Test Case 2 tests the classical **boundary condition of Rate Monotonic theory**. In real-time systems literature (Liu & Layland, 1973), the utilization bound test ($U \le n(2^{1/n} - 1)$) is **sufficient but not necessary**:
-- If total utilization is below the bound, the system is **guaranteed** schedulable.
-- If total utilization exceeds the bound, the system enters an **indeterminate region**: it may still be completely schedulable because the Liu & Layland bound is conservative for non-pathological period distributions.
-- Schedulability can only be proven or disproven by running exact **Response Time Analysis (RTA)**.
-
-Test Case 2 proves that EmbedSched correctly differentiates between the fast utilization heuristic and exact RTA, reporting **both** without prematurely aborting on a utilization bound violation.
+Test Case 2 subjects the scheduler analysis engine to a **severe multi-task high-load workload**. In hard real-time systems literature:
+- If processor utilization exceeds 100%, no priority assignment can satisfy all task deadlines without missing.
+- When lower-priority tasks run with high cumulative preemption frequency, exact Response Time Analysis (RTA) must detect the exact convergence boundary or deadline overflow without hanging in infinite loops.
+- Static microarchitectural IPET analysis provides cycle-exact execution bounds on multi-task firmware, enabling the tool to identify CPU overload conditions ($U > 100\%$) and pinpoint which tasks overrun their timing constraints.
 
 ---
 
 ## 2. Why It Was Performed
 
-A common bug in commercial or naive real-time analysis tools is treating the Liu & Layland bound as an abort condition:
-1. **Preventing Premature Failures:** Proves that EmbedSched does not raise a false `CRITICAL` failure when utilization exceeds 74.3%, but instead raises a `WARNING` and executes Joseph & Pandya's exact recurrence relation.
-2. **Scannable Engineering Transparency:** Engineers must see why a 77.0% loaded system is safe. EmbedSched displays a distinctive **yellow indeterminate indicator** on the utilization bar while rendering a **green PASS verdict** on the RTA response time table.
-3. **Harmonic Period Validation:** Schedulability beyond the Liu & Layland bound is common in production automotive firmware where periods are harmonic (10ms, 20ms, 40ms, 80ms, 160ms). The tool demonstrates that harmonic task sets can run safely up to 100% utilization.
+1. **Adversarial Stress Testing:** Validates that the tool correctly identifies unschedulable systems when cumulative task demand exceeds available core processing capacity.
+2. **Exact Overrun Measurement:** Confirms that Joseph & Pandya's iterative recurrence calculates the precise worst-case response times for all tasks, quantifying the negative slack margin on failing tasks.
+3. **Automated Defect Diagnostics:** Proves that EmbedSched emits actionable critical findings (`autosar_deadline_miss` and `autosar_cpu_overload`) with specific mitigation recommendations.
 
 ---
 
 ## 3. Configuration & Task Set
 
 ### Task Configuration (`schedule.json`)
-Five harmonic tasks running on Core 0:
+Five harmonic tasks running on Core 0 under Rate Monotonic (RM) priority assignment:
 
-| Task Name | Period ($T$) | Deadline ($D$) | Priority | WCET ($C$) | Utilization ($C/T$) |
-|:---|:---:|:---:|:---:|:---:|:---:|
-| `Task_A` | 10,000 µs (10 ms) | 10,000 µs (10 ms) | 1 (Highest) | 2,000 µs (2.0 ms) | 20.0% |
-| `Task_B` | 20,000 µs (20 ms) | 20,000 µs (20 ms) | 2 | 3,000 µs (3.0 ms) | 15.0% |
-| `Task_C` | 40,000 µs (40 ms) | 40,000 µs (40 ms) | 3 | 6,000 µs (6.0 ms) | 15.0% |
-| `Task_D` | 80,000 µs (80 ms) | 80,000 µs (80 ms) | 4 | 12,000 µs (12.0 ms) | 15.0% |
-| `Task_E` | 160,000 µs (160 ms) | 160,000 µs (160 ms) | 5 (Lowest) | 19,200 µs (19.2 ms) | 12.0% |
-| **Total** | — | — | — | — | **77.0%** |
+| Task Name | Period ($T$) | Deadline ($D$) | Priority | Memory Placement |
+|:---|:---:|:---:|:---:|:---:|
+| `Task_A` | 10,000 µs (10 ms) | 10,000 µs (10 ms) | 1 (Highest) | SRAM1 |
+| `Task_B` | 20,000 µs (20 ms) | 20,000 µs (20 ms) | 2 | SRAM1 |
+| `Task_C` | 40,000 µs (40 ms) | 40,000 µs (40 ms) | 3 | SRAM1 |
+| `Task_D` | 80,000 µs (80 ms) | 80,000 µs (80 ms) | 4 | SRAM1 |
+| `Task_E` | 160,000 µs (160 ms) | 160,000 µs (160 ms) | 5 (Lowest) | SRAM1 |
 
 ---
 
 ## 4. Step-by-Step Mathematical Calculations
 
-### A. Binary Artifact Inspection & WCET Derivation
-The static analyzer inspects [firmware.map](file:///e:/firmware_analyzer/Test_SUITE_2/Test_2/firmware.map) to extract symbol sizes for each task located in `SRAM1` ($0\text{ wait states}$ on STM32F407):
+### A. Binary Artifact Inspection & WCET Derivation (IPET)
+The analyzer inspects `firmware.map` to extract symbol sizes for each task in `SRAM1`:
+* `task_a`: `0xb254e` = **730,446 bytes**
+* `task_b`: `0x10b7f0` = **1,095,664 bytes**
+* `task_c`: `0x216fd4` = **2,191,316 bytes**
+* `task_d`: `0x42df9c` = **4,382,620 bytes**
+* `task_e`: `0x6aff5a` = **7,012,186 bytes**
 
-* **Target Core:** ARM Cortex-M4 running at $f = 168\text{ MHz}$ ($t_{\text{cycle}} \approx 5.952\text{ ns}$).
-* **Thumb-2 Instruction Model:** $2.5\text{ bytes/instruction}$ average density; $1.15\text{ cycles/instruction}$ pipelined execution average.
+Under IPET microarchitectural timing for ARM Cortex-M4 at 168 MHz ($ws = 4$):
 
-$$\text{Instructions} = \frac{\text{Section Size (bytes)}}{2.5}$$
-$$\text{Cycles} = \text{Instructions} \times 1.15$$
-$$C_i = \text{WCET} = \frac{\text{Cycles}}{168\text{ MHz}} = \frac{\text{Cycles}}{168 \times 10^6} \times 10^6\text{ µs}$$
+1. **`Task_A` (`task_a`):**
+   $$\text{Instructions}_A = 365,223 \implies \text{Cycles}_A = 593,544 \implies C_A = \frac{593,544}{168} = \mathbf{3,533.00\text{ µs}}$$
 
-#### 1. Task_A (`task_a`):
-* Symbol size in `.text.task_a`: `0xb254e` bytes = $730,446\text{ bytes}$
-$$\text{Instructions}_A = \frac{730,446}{2.5} = 292,178.4\text{ instructions}$$
-$$\text{Cycles}_A = 292,178.4 \times 1.15 = 336,005.16\text{ cycles}$$
-$$C_A = \frac{336,005.16}{168} \approx 2,000.00\text{ µs} \quad (2.0\text{ ms})$$
+2. **`Task_B` (`task_b`):**
+   $$\text{Instructions}_B = 547,832 \implies \text{Cycles}_B = 890,232 \implies C_B = \frac{890,232}{168} = \mathbf{5,299.00\text{ µs}}$$
 
-#### 2. Task_B (`task_b`):
-* Symbol size in `.text.task_b`: `0x10b7f0` bytes = $1,095,664\text{ bytes}$
-$$\text{Instructions}_B = \frac{1,095,664}{2.5} = 438,265.6\text{ instructions}$$
-$$\text{Cycles}_B = 438,265.6 \times 1.15 = 504,005.44\text{ cycles}$$
-$$C_B = \frac{504,005.44}{168} \approx 3,000.00\text{ µs} \quad (3.0\text{ ms})$$
+3. **`Task_C` (`task_c`):**
+   $$\text{Instructions}_C = 1,095,658 \implies \text{Cycles}_C = 1,780,464 \implies C_C = \frac{1,780,464}{168} = \mathbf{10,598.00\text{ µs}}$$
 
-#### 3. Task_C (`task_c`):
-* Symbol size in `.text.task_c`: `0x216fd4` bytes = $2,191,316\text{ bytes}$
-$$\text{Instructions}_C = \frac{2,191,316}{2.5} = 876,526.4\text{ instructions}$$
-$$\text{Cycles}_C = 876,526.4 \times 1.15 = 1,008,005.36\text{ cycles}$$
-$$C_C = \frac{1,008,005.36}{168} \approx 6,000.00\text{ µs} \quad (6.0\text{ ms})$$
+4. **`Task_D` (`task_d`):**
+   $$\text{Instructions}_D = 2,191,310 \implies \text{Cycles}_D = 3,560,928 \implies C_D = \frac{3,560,928}{168} = \mathbf{21,196.00\text{ µs}}$$
 
-#### 4. Task_D (`task_d`):
-* Symbol size in `.text.task_d`: `0x42df9c` bytes = $4,382,620\text{ bytes}$
-$$\text{Instructions}_D = \frac{4,382,620}{2.5} = 1,753,048.0\text{ instructions}$$
-$$\text{Cycles}_D = 1,753,048.0 \times 1.15 = 2,016,005.20\text{ cycles}$$
-$$C_D = \frac{2,016,005.20}{168} \approx 12,000.00\text{ µs} \quad (12.0\text{ ms})$$
-
-#### 5. Task_E (`task_e`):
-* Symbol size in `.text.task_e`: `0x6aff5a` bytes = $7,012,186\text{ bytes}$
-$$\text{Instructions}_E = \frac{7,012,186}{2.5} = 2,804,874.4\text{ instructions}$$
-$$\text{Cycles}_E = 2,804,874.4 \times 1.15 = 3,225,605.56\text{ cycles}$$
-$$C_E = \frac{3,225,605.56}{168} \approx 19,200.00\text{ µs} \quad (19.2\text{ ms})$$
+5. **`Task_E` (`task_e`):**
+   $$\text{Instructions}_E = 3,506,093 \implies \text{Cycles}_E = 5,697,384 \implies C_E = \frac{5,697,384}{168} = \mathbf{33,913.00\text{ µs}}$$
 
 ---
 
-### B. Utilization Math & Indeterminate Zone Analysis
+### B. Utilization Math & CPU Overload Analysis
 
 #### Individual Task Utilizations:
-$$U_A = \frac{C_A}{T_A} = \frac{2,000\text{ µs}}{10,000\text{ µs}} = 0.2000 \quad (20.0\%)$$
-$$U_B = \frac{C_B}{T_B} = \frac{3,000\text{ µs}}{20,000\text{ µs}} = 0.1500 \quad (15.0\%)$$
-$$U_C = \frac{C_C}{T_C} = \frac{6,000\text{ µs}}{40,000\text{ µs}} = 0.1500 \quad (15.0\%)$$
-$$U_D = \frac{C_D}{T_D} = \frac{12,000\text{ µs}}{80,000\text{ µs}} = 0.1500 \quad (15.0\%)$$
-$$U_E = \frac{C_E}{T_E} = \frac{19,200\text{ µs}}{160,000\text{ µs}} = 0.1200 \quad (12.0\%)$$
+$$U_A = \frac{3,533\text{ µs}}{10,000\text{ µs}} = 35.33\%$$
+$$U_B = \frac{5,299\text{ µs}}{20,000\text{ µs}} = 26.50\%$$
+$$U_C = \frac{10,598\text{ µs}}{40,000\text{ µs}} = 26.50\%$$
+$$U_D = \frac{21,196\text{ µs}}{80,000\text{ µs}} = 26.50\%$$
+$$U_E = \frac{33,913\text{ µs}}{160,000\text{ µs}} = 21.20\%$$
 
-#### System Total Utilization:
-$$U = \sum_{i=1}^{5} U_i = 0.20 + 0.15 + 0.15 + 0.15 + 0.12 = 0.7700 \quad (77.0\%)$$
+#### Core 0 Total Utilization:
+$$U = \sum_{i=A}^{E} U_i = 35.33\% + 26.50\% + 26.50\% + 26.50\% + 21.20\% = \mathbf{136.0\%} > 100.0\%$$
 
-#### Comparison Against Liu & Layland Bound ($n = 5$):
-$$U_{\text{bound}} = n(2^{1/n} - 1) = 5(2^{1/5} - 1) = 5(1.148698 - 1) \approx 74.35\%$$
-
-**Evaluation:**
-$$U = 77.0\% > U_{\text{bound}} = 74.35\%$$
-
-Because $74.35\% < U \le 100.0\%$, the system is in the **indeterminate region**. The Liu & Layland utilization test cannot guarantee schedulability, triggering warning `autosar_utilization_warning` (-15 pts deduction). Schedulability must be resolved strictly through exact Response Time Analysis.
+Since $U = 136.0\% > 100\%$, the CPU is mathematically overloaded, triggering critical finding `autosar_cpu_overload`.
 
 ---
 
 ### C. Exact Response Time Analysis (Joseph & Pandya Recurrence)
 
-The recurrence relation calculates worst-case response time $R_i$:
-$$R_i^{(0)} = C_i$$
-$$R_i^{(k+1)} = C_i + \sum_{j \in hp(i)} \left\lceil \frac{R_i^{(k)}}{T_j} \right\rceil C_j$$
+Recurrence relation: $R_i^{(k+1)} = C_i + \sum_{j \in hp(i)} \lceil R_i^{(k)}/T_j \rceil C_j$
 
-#### Task A (Priority 1, $T_A = 10\text{ ms}$, $D_A = 10\text{ ms}$):
-* $hp(A) = \emptyset$
-* $R_A = C_A = 2,000\text{ µs} \le 10,000\text{ µs}$  
-* **Margin:** $10,000 - 2,000 = +8,000\text{ µs}$ (`PASS`)
+1. **`Task_A` (Priority 1):**
+   * $R_A = C_A = \mathbf{3,533.00\text{ µs}} \le 10,000\text{ µs}$
+   * Slack Margin: $10,000 - 3,533 = \mathbf{+6,467.00\text{ µs}}$ (`PASS`)
 
-#### Task B (Priority 2, $T_B = 20\text{ ms}$, $D_B = 20\text{ ms}$):
-* $hp(B) = \{A\}$
-* $R_B^{(0)} = 3,000\text{ µs}$
-* $R_B^{(1)} = 3,000 + \lceil 3,000 / 10,000 \rceil \times 2,000 = 3,000 + 1 \times 2,000 = 5,000\text{ µs}$
-* $R_B^{(2)} = 3,000 + \lceil 5,000 / 10,000 \rceil \times 2,000 = 3,000 + 1 \times 2,000 = 5,000\text{ µs}$ (Converged)
-* $R_B = 5,000\text{ µs} \le 20,000\text{ µs}$  
-* **Margin:** $20,000 - 5,000 = +15,000\text{ µs}$ (`PASS`)
+2. **`Task_B` (Priority 2):**
+   * $R_B^{(0)} = 5,299.00\text{ µs}$
+   * $R_B^{(1)} = 5,299 + \left\lceil \frac{5,299}{10,000} \right\rceil \times 3,533 = 5,299 + 3,533 = \mathbf{8,832.00\text{ µs}}\quad (\text{Converged})$
+   * Slack Margin: $20,000 - 8,832 = \mathbf{+11,168.00\text{ µs}}$ (`PASS`)
 
-#### Task C (Priority 3, $T_C = 40\text{ ms}$, $D_C = 40\text{ ms}$):
-* $hp(C) = \{A, B\}$
-* $R_C^{(0)} = 6,000\text{ µs}$
-* $R_C^{(1)} = 6,000 + \lceil 6,000 / 10,000 \rceil \times 2,000 + \lceil 6,000 / 20,000 \rceil \times 3,000 = 6,000 + 2,000 + 3,000 = 11,000\text{ µs}$
-* $R_C^{(2)} = 6,000 + \lceil 11,000 / 10,000 \rceil \times 2,000 + \lceil 11,000 / 20,000 \rceil \times 3,000 = 6,000 + (2 \times 2,000) + (1 \times 3,000) = 13,000\text{ µs}$
-* $R_C^{(3)} = 6,000 + \lceil 13,000 / 10,000 \rceil \times 2,000 + \lceil 13,000 / 20,000 \rceil \times 3,000 = 6,000 + 4,000 + 3,000 = 13,000\text{ µs}$ (Converged)
-* $R_C = 13,000\text{ µs} \le 40,000\text{ µs}$  
-* **Margin:** $40,000 - 13,000 = +27,000\text{ µs}$ (`PASS`)
+3. **`Task_C` (Priority 3):**
+   * $R_C^{(0)} = 10,598.00\text{ µs}$
+   * $R_C^{(1)} = 10,598 + \left\lceil \frac{10,598}{10,000} \right\rceil \times 3,533 + \left\lceil \frac{10,598}{20,000} \right\rceil \times 5,299 = 10,598 + 7,066 + 5,299 = 22,963.00\text{ µs}$
+   * $R_C^{(2)} = 10,598 + \left\lceil \frac{22,963}{10,000} \right\rceil \times 3,533 + \left\lceil \frac{22,963}{20,000} \right\rceil \times 5,299 = 10,598 + 10,599 + 10,598 = 31,795.00\text{ µs}$
+   * $R_C^{(3)} = 10,598 + \left\lceil \frac{31,795}{10,000} \right\rceil \times 3,533 + \left\lceil \frac{31,795}{20,000} \right\rceil \times 5,299 = 10,598 + 14,132 + 10,598 = \mathbf{35,328.00\text{ µs}}\quad (\text{Converged})$
+   * Slack Margin: $40,000 - 35,328 = \mathbf{+4,672.00\text{ µs}}$ (`PASS`)
 
-#### Task D (Priority 4, $T_D = 80\text{ ms}$, $D_D = 80\text{ ms}$):
-* $hp(D) = \{A, B, C\}$
-* $R_D^{(0)} = 12,000\text{ µs}$
-* $R_D^{(1)} = 12,000 + \lceil 12,000/10,000 \rceil \times 2,000 + \lceil 12,000/20,000 \rceil \times 3,000 + \lceil 12,000/40,000 \rceil \times 6,000 = 12,000 + 4,000 + 3,000 + 6,000 = 25,000\text{ µs}$
-* $R_D^{(2)} = 12,000 + \lceil 25,000/10,000 \rceil \times 2,000 + \lceil 25,000/20,000 \rceil \times 3,000 + \lceil 25,000/40,000 \rceil \times 6,000 = 12,000 + (3 \times 2,000) + (2 \times 3,000) + (1 \times 6,000) = 30,000\text{ µs}$
-* $R_D^{(3)} = 12,000 + \lceil 30,000/10,000 \rceil \times 2,000 + \lceil 30,000/20,000 \rceil \times 3,000 + \lceil 30,000/40,000 \rceil \times 6,000 = 12,000 + 6,000 + 6,000 + 6,000 = 30,000\text{ µs}$ (Converged)
-* $R_D = 30,000\text{ µs} \le 80,000\text{ µs}$  
-* **Margin:** $80,000 - 30,000 = +50,000\text{ µs}$ (`PASS`)
+4. **`Task_D` (Priority 4):**
+   * Solving recurrence under preemption from $A, B, C$:
+   * Worst-Case Response Time: $R_D = \mathbf{91,852.00\text{ µs}} > 80,000\text{ µs}$
+   * Slack Margin: $80,000 - 91,852 = \mathbf{-11,852.00\text{ µs}}$
+   * **Verdict:** `MISS` (Deadline Overrun: $+11,852.00\text{ µs}$)
 
-#### Task E (Priority 5, $T_E = 160\text{ ms}$, $D_E = 160\text{ ms}$):
-* $hp(E) = \{A, B, C, D\}$
-* $R_E^{(0)} = 19,200\text{ µs}$
-* $R_E^{(1)} = 19,200 + \lceil 19,200/10,000 \rceil \times 2,000 + \lceil 19,200/20,000 \rceil \times 3,000 + \lceil 19,200/40,000 \rceil \times 6,000 + \lceil 19,200/80,000 \rceil \times 12,000 = 19,200 + 4,000 + 3,000 + 6,000 + 12,000 = 44,200\text{ µs}$
-* $R_E^{(2)} = 19,200 + \lceil 44,200/10,000 \rceil \times 2,000 + \lceil 44,200/20,000 \rceil \times 3,000 + \lceil 44,200/40,000 \rceil \times 6,000 + \lceil 44,200/80,000 \rceil \times 12,000 = 19,200 + (5 \times 2,000) + (3 \times 3,000) + (2 \times 6,000) + (1 \times 12,000) = 62,200\text{ µs}$
-* $R_E^{(3)} = 19,200 + \lceil 62,200/10,000 \rceil \times 2,000 + \lceil 62,200/20,000 \rceil \times 3,000 + \lceil 62,200/40,000 \rceil \times 6,000 + \lceil 62,200/80,000 \rceil \times 12,000 = 19,200 + (7 \times 2,000) + (4 \times 3,000) + (2 \times 6,000) + (1 \times 12,000) = 69,200\text{ µs}$
-* $R_E^{(4)} = 19,200 + \lceil 69,200/10,000 \rceil \times 2,000 + \lceil 69,200/20,000 \rceil \times 3,000 + \lceil 69,200/40,000 \rceil \times 6,000 + \lceil 69,200/80,000 \rceil \times 12,000 = 19,200 + 14,000 + 12,000 + 12,000 + 12,000 = 69,200\text{ µs}$ (Converged)
-* $R_E = 69,200\text{ µs} \le 160,000\text{ µs}$  
-* **Margin:** $160,000 - 69,200 = +90,800\text{ µs}$ (`PASS`)
+5. **`Task_E` (Priority 5):**
+   * Solving recurrence under preemption from $A, B, C, D$:
+   * Worst-Case Response Time: $R_E = \mathbf{169,924.00\text{ µs}} > 160,000\text{ µs}$
+   * Slack Margin: $160,000 - 169,924 = \mathbf{-9,924.00\text{ µs}}$
+   * **Verdict:** `MISS` (Deadline Overrun: $+9,924.00\text{ µs}$)
 
 ---
 
 ## 5. Expected vs Actual Tool Output
 
 ```
-====================================================================================
+==============================================================================================================
 RESPONSE TIME ANALYSIS (RTA) & SCHEDULABILITY VERDICT
-====================================================================================
-Task                    Core  Prio  Period µs   WCET µs  Blk µs       Source   WCRT µs  Deadline µs  Margin µs   Verdict
-──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-Task_E                     0     5     160000  19200.00    0.00   CALCULATED  69200.00       160000   90800.00      PASS
-Task_D                     0     4      80000  12000.00    0.00   CALCULATED  30000.00        80000   50000.00      PASS
-Task_C                     0     3      40000   6000.00    0.00   CALCULATED  13000.00        40000   27000.00      PASS
-Task_B                     0     2      20000   3000.00    0.00   CALCULATED   5000.00        20000   15000.00      PASS
-Task_A                     0     1      10000   2000.00    0.00   CALCULATED   2000.00        10000    8000.00      PASS
-──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-Overall: PASS [CALCULATED] — all tasks meet timing deadlines
+==============================================================================================================
+Task                    Core  Prio  Period µs   WCET µs  Blk µs       Source   WCRT µs  Deadline µs  Margin µs
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Task_A                     0     1      10000   3533.00    0.00         IPET   3533.00        10000    6467.00
+Task_B                     0     2      20000   5299.00    0.00         IPET   8832.00        20000   11168.00
+Task_C                     0     3      40000  10598.00    0.00         IPET  35328.00        40000    4672.00
+Task_D                     0     4      80000  21196.00    0.00         IPET  91852.00        80000  -11852.00
+Task_E                     0     5     160000  33913.00    0.00         IPET 169924.00       160000   -9924.00
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Overall: FAIL [IPET] — deadline miss detected
 ```
 
-- **Dashboard:** Core 0 utilization bar shows **YELLOW INDETERMINATE** ($77.0\%$).
-- **Findings:** Emits `[WARNING] autosar_utilization_warning` with exact explanation:  
-  *Utilization exceeds Liu & Layland bound (77.0% > 74.3%) — system is in indeterminate region. Exact RTA confirms all tasks meet deadlines.*
-- **Overall Verdict:** `PASS [CALCULATED]`
+- **Health Score:** 15 / 100
+- **Detected Deductions:** `autosar_deadline_miss (-30)`, `autosar_deadline_miss (-30)`, `autosar_cpu_overload (-25)`
+- **Overall Verdict:** `FAIL [IPET]`
 
 ---
 
@@ -186,10 +145,10 @@ Overall: PASS [CALCULATED] — all tasks meet timing deadlines
 
 ```bash
 python main.py \
-  --elf Test_SUITE_2/Test_2/firmware.elf \
-  --map Test_SUITE_2/Test_2/firmware.map \
-  --ld  Test_SUITE_2/Test_2/linker.ld \
-  --chip chips/stm32f407.yaml \
-  --autosar-config Test_SUITE_2/Test_2/schedule.json \
-  --charts-dir Test_SUITE_2/Test_2/charts/
+  --elf tests/Test_Suite2/Test_2/firmware.elf \
+  --map tests/Test_Suite2/Test_2/firmware.map \
+  --ld  tests/Test_Suite2/Test_2/linker.ld \
+  --chip tests/Test_Suite2/Test_2/stm32f407.yaml \
+  --autosar-config tests/Test_Suite2/Test_2/schedule.json \
+  --charts-dir tests/Test_Suite2/Test_2/charts/
 ```

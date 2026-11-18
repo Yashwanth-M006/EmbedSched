@@ -146,7 +146,7 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
     [B]  tau2
 
   DEADLINE MISSES (1 events):
-    [MISS]  tau2                 released @ 0 µs,  deadline @ 15000 µs,  finished @ 29155.07 µs  (+14155.07 µs late)
+    [MISS]  tau2                 released @ 0 µs,  deadline @ 15000 µs,  finished @ 29274.72 µs  (+14274.72 µs late)
 
 5. JITTER ANALYSIS
 
@@ -156,7 +156,7 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
   Task                    Activations  Max Jitter µs  Mean Jitter µs Assessment
   ────────────────────────────────────────────────────────────────────────────
   tau1                              3           0.00            0.00  EXCELLENT (<1% of period)
-  tau2                              2       14155.07        10500.14  HIGH (>20% of period
+  tau2                              2       14274.72        10502.39  HIGH (>20% of period
   ────────────────────────────────────────────────────────────────────────────
   NOTE: Jitter is measured against the ideal periodic release time.
   Non-zero jitter is caused by higher-priority task preemption.
