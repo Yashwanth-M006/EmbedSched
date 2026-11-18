@@ -18,6 +18,13 @@
 - [Visual Output Examples](#visual-output-examples)
 - [CI/CD Pipeline Integration](#cicd-pipeline-integration)
 - [Confidence Tags](#confidence-tags)
+- [Worst-Case Execution Time (WCET) Derivation](#worst-case-execution-time-wcet-derivation)
+  - [The Six-Tier Confidence Hierarchy](#the-six-tier-confidence-hierarchy)
+  - [Static Microarchitectural Analysis via IPET](#static-microarchitectural-analysis-via-ipet)
+  - [Whole-Program Call-Graph Traversal (DFS)](#whole-program-call-graph-traversal-dfs)
+  - [Hardware-Aware ISR Timing Model](#hardware-aware-interrupt-service-routine-isr-timing-model)
+  - [Cycle-to-Microsecond Conversion & Heterogeneous Multi-Core Modeling](#cycle-to-microsecond-conversion-heterogeneous-multi-core-modeling)
+  - [Architectural Fallback Heuristic ([CALCULATED])](#architectural-fallback-heuristic-calculated)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
@@ -30,12 +37,15 @@
   - [Linker Script (.ld)](#linker-script-ld)
   - [Chip Profile YAML](#chip-profile-yaml)
   - [AUTOSAR Schedule Configuration](#autosar-schedule-configuration-schedulejson)
+  - [Loop Bounds in schedule.json](#loop-bounds-in-schedulejson)
+  - [GCC Optimization Logs (-fopt-info-loop)](#gcc-optimization-logs-fopt-info-loop)
   - [Optional: Renode Trace](#optional-renode-trace)
 - [Project Structure](#project-structure)
 - [SDK Reference](#sdk-reference)
   - [Parsers](#parsers)
   - [Models](#models)
   - [Analysis Engine](#analysis-engine)
+  - [IPET Engine (Implicit Path Enumeration)](#ipet-engine-implicit-path-enumeration)
   - [Rule Engine](#rule-engine)
   - [Simulation Layer](#simulation-layer)
   - [Reporting & Visualization](#reporting-visualization)
@@ -203,14 +213,220 @@ jobs:
 
 ## Confidence Tags
 
-Every finding carries an explicit confidence tag so the tool never overclaims:
+Every finding and WCET metric carries an explicit confidence tag so the tool never overclaims:
 
-| Tag | Meaning |
-|---|---|
-| `[STATIC]` | Ground truth from `.map`/`.elf` parsing. No estimation involved. |
-| `[CALCULATED]` | Derived from datasheet arithmetic and the ARMv7-M Architecture Reference Manual. Sourced and citable. |
-| `[SIMULATED]` | From Renode functional execution trace. Accurate call counts; timing is an approximation (no cache or pipeline modeling). |
-| `[HEURISTIC]` | Pattern match on symbol or section names. No formal timing claim made. |
+| Tag | Level | Meaning | Verification Basis |
+|---|---|---|---|
+| `[STATIC]` | Ground Truth | Memory map and section layouts from `.map` / `.elf` parsing. | Exact linker geometry; no estimation involved. |
+| `[SIMULATED]` | High | Cycle and instruction counts from Renode functional emulation. | Accurate call counts and loop trip counts; approximate hardware timing. |
+| `[IPET]` | High | Microarchitectural worst-case path derived via Integer Linear Programming. | Proven compiler loop bounds (GCC `-fopt-info` / DWARF) + pipeline / prefetch model. |
+| `[IPET-ANNOTATED]` | High | Microarchitectural IPET model with user-annotated loop iteration bounds. | Pipeline / prefetch model with manual bounds from `schedule.json`. |
+| `[IPET-CONSERVATIVE]` | Medium | Microarchitectural IPET model using conservative upper-bound fallback. | Pipeline / prefetch model with `--max-loop-bound` fallback ceiling. |
+| `[CALCULATED]` | Screening | Architectural code-size linear heuristic ($C = \frac{\text{size}}{\text{BPI}} \times \text{CPI}$). | Sourced from ARM core architecture datasheets and wait-state tables. |
+| `[HEURISTIC]` | Lowest | Unverified pattern match on symbol names or 10-cycle placeholder. | Flags overall schedulability report as UNRELIABLE until resolved. |
+
+---
+
+## Worst-Case Execution Time (WCET) Derivation
+
+In hard real-time and safety-critical firmware (e.g., AUTOSAR Classic, ISO 26262 automotive ECUs, IEC 61508 industrial controls), exact Response Time Analysis ($R_i \le D_i$) and CPU utilization bounding depend entirely on knowing the Worst-Case Execution Time ($C_i$) of every periodic task and interrupt service routine (ISR).
+
+EmbedSched implements a comprehensive multi-tier WCET derivation engine combining **Static Microarchitectural Analysis via the Implicit Path Enumeration Technique (IPET)**, **Dynamic Functional Emulation (Renode)**, **ARM Architecture Fallback Heuristics**, and **Hardware-Aware Exception Modeling**.
+
+### The Six-Tier Confidence Hierarchy
+
+EmbedSched assigns an explicit, auditable confidence tag to every task's WCET. If a task invokes sub-functions of mixed confidence across its call graph, the **lowest confidence tag contaminates the entire task** and propagates to the executive summary verdict banner:
+
+```
+[SIMULATED]          Highest Confidence   Measured functional instruction trace from Renode emulation
+     ▲
+     │ (Falls back if no trace provided)
+     │
+[IPET]               High Confidence      Static CFG + In-order pipeline + Flash prefetch model (Proven loop bounds via GCC/DWARF)
+     ▲
+     │ (Falls back if user annotations supplied)
+     │
+[IPET-ANNOTATED]     High Confidence      Static IPET model with user-annotated loop bounds (schedule.json)
+     ▲
+     │ (Falls back if non-analyzable loops use fallback bound)
+     │
+[IPET-CONSERVATIVE]  Medium Confidence    Static IPET model with conservative upper bound (--max-loop-bound)
+     ▲
+     │ (Falls back if ELF disassembly unavailable)
+     │
+[CALCULATED]         Screening Level      Architectural code-size heuristic (symbol size × ARM CPI / BPI)
+     ▲
+     │ (Falls back if symbol missing in ELF)
+     │
+[HEURISTIC]          Unreliable           10-cycle placeholder; flags schedulability as UNRELIABLE
+```
+
+| Confidence Tag | Analysis Method | Loop Bounding Source | Microarchitectural Fidelity |
+|---|---|---|---|
+| `[SIMULATED]` | Renode Instruction Trace | Exact dynamic iteration count | Functional execution; no cache or bus stalls |
+| `[IPET]` | CFG Reconstruction + ILP | Proven via GCC `-fopt-info-loop` / DWARF SCEV | Pipeline interlocks, multi-cycle insns, 128-bit Flash prefetch buffer |
+| `[IPET-ANNOTATED]` | CFG Reconstruction + ILP | User annotations in `schedule.json` | Pipeline interlocks, multi-cycle insns, 128-bit Flash prefetch buffer |
+| `[IPET-CONSERVATIVE]` | CFG Reconstruction + ILP | Fallback ceiling (`--max-loop-bound`, default: 1000) | Pipeline interlocks, multi-cycle insns, 128-bit Flash prefetch buffer |
+| `[CALCULATED]` | Code-Size Linear Heuristic | N/A (Linear code footprint) | Static ARM core database ($BPI, CPI_{\mathrm{penalty}}$) + wait states |
+| `[HEURISTIC]` | Missing Symbol Fallback | N/A (10 cycles placeholder) | Unverified; triggers audit warning |
+
+---
+
+### Static Microarchitectural Analysis via IPET
+
+Rather than relying on linear approximations or explicitly enumerating an exponential number of program execution paths, EmbedSched implements the **Implicit Path Enumeration Technique (IPET)** (Li & Malik). The analysis pipeline processes bare-metal ARM Cortex-M ELF binaries through six formal stages:
+
+```
+                  ELF Binary (.elf)
+                          │
+                          ▼
+        ┌───────────────────────────────────┐
+        │   Phase 1: Disassembly & Symbols  │
+        │   - Symbol resolution (.symtab)   │
+        │   - Thumb-2 instruction decoding  │
+        └─────────────────┬─────────────────┘
+                          │
+                          ▼
+        ┌───────────────────────────────────┐
+        │   Phase 2: CFG Reconstruction     │
+        │   - Basic block boundary analysis │
+        │   - Directed control flow edges   │
+        │   - Tarjan cycle & loop discovery │
+        └─────────────────┬─────────────────┘
+                          │
+                          ▼
+        ┌───────────────────────────────────┐
+        │   Phase 3: Loop Bound Extraction  │
+        │   - Tier 1: User annotations      │
+        │   - Tier 2: GCC -fopt-info (SCEV) │
+        │   - Tier 3: DWARF debug records   │
+        │   - Tier 4: Induction analysis    │
+        │   - Tier 5: Fallback bounds       │
+        └─────────────────┬─────────────────┘
+                          │
+                          ▼
+        ┌───────────────────────────────────┐
+        │   Phase 4: Microarchitectural     │
+        │            Timing Analysis        │
+        │   - Pipeline FSM & data hazards   │
+        │   - 128-bit Flash prefetch buffer │
+        │   - Edge cost cycle assignment    │
+        └─────────────────┬─────────────────┘
+                          │
+                          ▼
+        ┌───────────────────────────────────┐
+        │   Phase 5: Integer Linear         │
+        │            Programming (ILP)      │
+        │   - Edge flow conservation        │
+        │   - Loop capacity constraints     │
+        │   - HiGHS Branch-and-Cut solver   │
+        └─────────────────┬─────────────────┘
+                          │
+                          ▼
+        ┌───────────────────────────────────┐
+        │   Phase 6: Whole-Program DFS      │
+        │   - Call-graph BL/BLX composition │
+        │   - Inter-procedural path sum     │
+        │   - Cycle-to-microsecond scaling  │
+        └───────────────────────────────────┘
+```
+
+#### 1. Control Flow Graph (CFG) Construction
+The parser decodes Thumb-2 instructions (`Capstone` or `arm-none-eabi-objdump`), identifies basic block leaders (entry points, branch targets, instructions immediately following branches), and creates a directed flow graph $G = (V, E)$. Loops, loop headers, and back-edges are discovered using Tarjan's cycle identification algorithm.
+
+#### 2. Multi-Tier Loop Bound Extraction
+Loops must be bounded to compute a finite WCET. EmbedSched employs a 5-tier extraction strategy:
+1. **User Annotations (`schedule.json`):** Explicit loop bounds configured per function and loop ID.
+2. **Compiler Optimization Logs (`--opt-info`):** Parses GCC `-fopt-info-loop` logs extracting compiler-proven Scalar Evolution (SCEV) trip counts:
+   ```bash
+   arm-none-eabi-gcc -O2 -fopt-info-loop=build/loops.log ...
+   ```
+3. **DWARF Debug Records:** Inspects `.debug_info` induction variable bounds when present.
+4. **Static Loop Induction Matching:** Scans loop headers for comparison against constant immediate values (`cmp rX, #N`).
+5. **Fallback Bounds:** If a complex or data-dependent loop cannot be bounded statically, the tool assigns `--max-loop-bound` (default: 1000) with tag `[IPET-CONSERVATIVE]`, or halts with an error if `--strict-bounds` is enabled.
+
+#### 3. Microarchitectural Pipeline & Memory Simulation
+For each basic block and transition edge, EmbedSched simulates hardware cycle costs on in-order ARM Cortex-M pipelines:
+- **Instruction Execution Latencies:** 1 cycle for standard arithmetic/logic; 2–12 cycles for hardware integer divide (`SDIV`/`UDIV`); multi-cycle 32-bit and 64-bit multiplications (`MUL`, `MLA`, `SMULL`, `UMULL`).
+- **Data Hazard & Load-Use Stalls:** A 1-cycle interlock stall is automatically injected whenever an instruction immediately consumes the destination register of a preceding load instruction (`LDR`/`LDRB`/`LDRH`).
+- **Branch Asymmetry & Pipeline Flushes:** A taken branch incurs a 2- to 3-cycle pipeline flush and instruction prefetch invalidation penalty, whereas fall-through conditional evaluations consume 1 cycle.
+- **128-Bit Flash Prefetch Buffer Modeling:** Flash memory is accessed across a 128-bit wide bus. Sequential instruction fetches that hit within the currently buffered 128-bit line incur 0 wait states. Branch targets or sequential line-crossings incur chip-specific wait states ($w$) looked up from the chip profile YAML for the operating clock frequency.
+
+#### 4. Integer Linear Programming (ILP) Formulation
+The worst-case execution path through the function CFG is formulated as an Integer Linear Program:
+
+$$\text{Maximize } \text{Cycles} = \sum_{v \in V} c_v \cdot x_v + \sum_{e \in E} c_e \cdot f_e$$
+
+Subject to:
+- **Structural Flow Conservation (Kirchhoff's Flow Law):** Total flow entering a basic block equals total flow leaving:
+  $$\sum_{e \in \mathrm{in}(v)} f_e = \sum_{e \in \mathrm{out}(v)} f_e = x_v \quad \forall v \in V \setminus \{\mathrm{entry}, \mathrm{exit}\}$$
+  $$f_{\mathrm{in}}(\mathrm{entry}) = 1, \quad f_{\mathrm{out}}(\mathrm{exit}) = 1$$
+- **Loop Capacity Constraints:** The execution frequency of a loop body basic block is bounded relative to the loop preheader:
+  $$x_{\mathrm{body}} \le N_{\mathrm{bound}} \cdot x_{\mathrm{preheader}}$$
+
+The ILP is solved using the open-source HiGHS branch-and-cut solver (`scipy.optimize.linprog`), yielding the exact worst-case cycle count without path enumeration blowup.
+
+---
+
+### Whole-Program Call-Graph Traversal (DFS)
+
+Because real-time tasks invoke helper routines, libraries, and hardware drivers, EmbedSched performs an inter-procedural Depth-First Search (DFS) over the static call graph built from `BL` and `BLX` disassembly instructions:
+
+$$\text{Cycles}_{\mathrm{task}} = \text{Cycles}_{\mathrm{own}} + \max_{\mathrm{callee} \in \mathrm{Callees}} \left( \text{Cycles}_{\mathrm{callee\_subtree}} \right)$$
+
+- **Worst-Case Branch Selection:** If a task calls multiple subroutines conditionally, EmbedSched computes the longest path through the call tree.
+- **Recursion Guard:** A visited set tracks active call chains to prevent infinite loops on recursive calls, flagging unbounded recursion as a `CRITICAL` finding.
+- **Confidence Contamination:** The overall task confidence tag is degraded to the weakest tag encountered anywhere in the call tree:
+  $$\text{Tag}_{\mathrm{task}} = \min \left( \text{Tag}_{\mathrm{entry}}, \min_{\mathrm{callee}} \text{Tag}_{\mathrm{callee}} \right)$$
+
+---
+
+### Hardware-Aware Interrupt Service Routine (ISR) Timing Model
+
+Device interrupts execute under hardware dispatch and cannot be treated as ordinary user-space functions. EmbedSched models hardware exception overhead and Flash wait-state penalties:
+
+$$\text{Cycles}_{\mathrm{ISR}} = \text{Overhead}_{\mathrm{hardware}} + \text{Cycles}_{\mathrm{body}} + \text{Penalty}_{\mathrm{flash}}$$
+
+1. **Hardware Context Stacking Overhead:** The Cortex-M hardware stacking and unstacking of CPU registers (`R0–R3`, `R12`, `LR`, `PC`, `xPSR`) consumes:
+   $$\text{Overhead}_{\mathrm{hardware}} = 12 \text{ cycles (entry)} + 12 \text{ cycles (return)} = 24 \text{ clock cycles}$$
+2. **Flash Wait-State Memory Inflation:** For an ISR placed in Flash instead of zero-wait-state RAM/ITCM, every instruction fetch incurs wait states ($w$):
+   $$\text{Cycles}_{\mathrm{ISR}} = 24 + N_{\mathrm{insn}} \cdot (1 + w)$$
+   Where $w$ is determined from the chip profile's `flash_wait_states` table at the core frequency.
+
+---
+
+### Cycle-to-Microsecond Conversion & Heterogeneous Multi-Core Modeling
+
+Once worst-case cycles ($\text{Cycles}_i$) are computed, EmbedSched converts cycles into physical execution time ($C_i$ in $\mu\text{s}$) according to the target core's operating clock frequency:
+
+$$C_i = \frac{\text{Cycles}_i}{f_{\mathrm{core}} \text{ (in MHz)}} \quad [\mu\text{s}]$$
+
+- **Heterogeneous Dual-Core Clocking:** In asymmetric multi-core chips (e.g. STM32H745 with Core 0 Cortex-M7 @ 480 MHz and Core 1 Cortex-M4 @ 240 MHz), the tool looks up `core_types[core_id]` to use the assigned core's frequency and architecture profile. The same function assigned to Core 1 is accurately modeled with a longer execution time than on Core 0.
+- **Precision Rounding:** Execution times $< 10.0\,\mu\text{s}$ are rounded to two decimal places (e.g., $1.43\,\mu\text{s}$) to preserve fidelity for high-speed motor control loops; values $\ge 10.0\,\mu\text{s}$ are rounded to the nearest integer.
+
+---
+
+### Architectural Fallback Heuristic (`[CALCULATED]`)
+
+When binary disassembly or loop bounds are unavailable, EmbedSched falls back to a sound, datasheet-parameterized code-size heuristic:
+
+$$\text{Instructions} = \frac{\text{Size}_{\mathrm{bytes}}}{\text{Bytes Per Instruction (BPI)}}, \quad \text{Cycles}_{\mathrm{body}} = \left\lfloor \text{Instructions} \times CPI_{\mathrm{penalty}} \right\rfloor$$
+
+#### Target Core Architecture Database
+
+| Architecture | Core | Typical Instruction Mix | BPI | CPI | Pipeline Structure |
+|---|---|---|---|---|---|
+| ARMv6-M | Cortex-M0 / M0+ / M1 | 16-bit Thumb | 2.10 | 1.35 | 2-stage in-order, Von Neumann bus |
+| ARMv7-M | Cortex-M3 | Mixed 16/32-bit Thumb-2 | 2.50 | 1.15 | 3-stage in-order, Harvard bus |
+| ARMv7E-M | Cortex-M4 | Thumb-2 + DSP / FPU | 2.50 | 1.15 | 3-stage in-order, Harvard bus |
+| ARMv7E-M | Cortex-M7 | Superscalar Thumb-2 | 2.60 | 0.85 | 6-stage dual-issue superscalar, branch prediction |
+| ARMv8-M | Cortex-M23 | Baseline Thumb | 2.15 | 1.30 | 2-stage in-order, TrustZone |
+| ARMv8-M | Cortex-M33 | Mainline Thumb-2 | 2.55 | 1.15 | 3-stage in-order, TrustZone |
+| ARMv8.1-M | Cortex-M55 / M85 | Helium Vector Extensions | 2.65–2.70 | 0.75–0.90 | Dual-issue superscalar vector pipeline |
+| ARMv7-R | Cortex-R4 / R5 / R52 | Real-time dual-core | 2.50 | 0.90 | Split-lock superscalar |
+| ARMv8-A | Cortex-A53 / A72 | AArch64 | 4.00 | 0.50 | Out-of-order / dual-issue |
+
+Parameters can be overridden globally or per-core in the chip YAML via `bytes_per_instruction` and `cpi_penalty`.
 
 ---
 
@@ -330,6 +546,9 @@ python main.py \
 | `--renode-repl` | path | — | Path to Renode `.repl` platform description (triggers live simulation) |
 | `--renode-sim-ms` | int | — | Duration to run Renode simulation in milliseconds (default: `2000`) |
 | `--hot-funcs` | string | — | Comma-separated list of performance-critical functions for Flash cache locality audit |
+| `--opt-info` | path | — | Path to GCC `-fopt-info-loop` log for compiler-proven loop bounds (enables `[IPET]`) |
+| `--max-loop-bound` | int | — | Maximum loop bound fallback for loops not statically determinable (default: `1000`) |
+| `--strict-bounds` | flag | — | Fail analysis if any loop cannot be statically bounded (disables conservative fallback) |
 
 ---
 
@@ -461,6 +680,33 @@ Defines the multi-core real-time task architecture, core scheduling algorithms, 
 | `core` | CPU core assignment (0, 1, …) |
 | `resource_locks` | List of shared resource IDs locked during task execution |
 
+### Loop Bounds in `schedule.json`
+
+When firmware loops cannot be proven automatically by the compiler or static pattern matching, explicit iteration upper bounds can be declared inside `schedule.json`. This grants `[IPET-ANNOTATED]` confidence:
+
+```json
+{
+  "loop_bounds": {
+    "motor_control_loop": {
+      "loop_0": 10
+    },
+    "filter_kalman": {
+      "loop_0": 4
+    }
+  }
+}
+```
+
+### GCC Optimization Logs (`-fopt-info-loop`)
+
+Compiler-proven Scalar Evolution (SCEV) loop bounds can be captured during compilation by passing `-fopt-info-loop`:
+
+```bash
+arm-none-eabi-gcc -O2 -fopt-info-loop=build/loops.log ...
+```
+
+Pass the resulting log to EmbedSched with `--opt-info build/loops.log`. The loop extractor parses loop locations, trip counts, and iteration upper bounds, enabling full `[IPET]` confidence without manual code annotations.
+
 ### Optional: Renode Trace
 
 A plain-text execution trace captured from Renode simulation. Each line contains a simulated cycle count and program counter value. The tool resolves PC addresses to function names via the ELF symbol table and builds a call frequency profile used for `[SIMULATED]` WCET tagging.
@@ -491,14 +737,25 @@ firmware_analyzer/
 │   └── autosar_task.py           # AutosarTask, AutosarCore, Resource, IPCChannel
 │
 ├── analysis/
-│   ├── region_classifier.py      # Symbol address → memory region name
-│   ├── call_graph.py             # Build call graph from disassembly (BL/BLX instructions)
-│   ├── stack_analyzer.py         # Worst-case stack depth via DFS
-│   ├── timing_model.py           # Datasheet-derived latency calculations
-│   ├── wcet_extractor.py         # Code-size & Renode WCET extraction + ISR modeling
-│   ├── rta_engine.py             # Multi-core Response Time Analysis & utilization
-│   ├── deadlock_detector.py      # Resource Allocation Graph (RAG) deadlock detection
-│   ├── scheduler_sim.py          # Discrete-event preemptive scheduler simulation & jitter
+│   ├── ipet/                         # Implicit Path Enumeration Technique (IPET) Engine
+│   │   ├── cfg_builder.py            # Basic block boundary analysis & Thumb-2 CFG
+│   │   ├── loop_bound_extractor.py   # Multi-tier loop bounds (SCEV / DWARF / annotations)
+│   │   ├── ilp_formulator.py         # Integer Linear Programming (HiGHS solver)
+│   │   ├── wcet_ipet.py              # Function IPET pipeline orchestrator
+│   │   ├── visualizer.py             # Publication-quality CFG renderer
+│   │   └── microarch/                # Hardware microarchitecture models
+│   │       ├── pipeline_model.py     # In-order execution latencies & load-use stalls
+│   │       ├── memory_model.py       # 128-bit Flash prefetch buffer & wait-state stalls
+│   │       └── edge_annotator.py     # CFG edge cycle cost assignment
+│   ├── region_classifier.py          # Symbol address → memory region name
+│   ├── call_graph.py                 # Build call graph from disassembly (BL/BLX instructions)
+│   ├── stack_analyzer.py             # Worst-case stack depth via DFS
+│   ├── timing_model.py               # Datasheet-derived latency calculations
+│   ├── wcet_extractor.py             # Multi-tier WCET extraction + call-graph composition
+│   ├── rta_engine.py                 # Multi-core Response Time Analysis & utilization
+│   ├── deadlock_detector.py          # Resource Allocation Graph (RAG) deadlock detection
+│   ├── scheduler_sim.py              # Discrete-event preemptive scheduler simulation & jitter
+│   ├── jitter_analyzer.py            # Activation start-time variation & stability metrics
 │   └── rules/
 │       ├── isr_placement.py          # Rule 1:  ISR in Flash vs. ITCM
 │       ├── bus_contention.py         # Rule 2:  DMA/CPU AHB bus contention
@@ -795,30 +1052,45 @@ flash_cold_ns  = (hw_entry_cycles + cache_line_words × (wait_states + 1)) × cy
 ```python
 from analysis.wcet_extractor import extract_wcets_for_tasks
 
-extract_wcets_for_tasks(tasks, symbols, call_graph, chip_profile, dynamic_profile)
-# Fills in task.wcet_us, task.wcet_cycles, task.wcet_tag, task.wcet_call_chain in-place
+extract_wcets_for_tasks(
+    tasks=tasks,
+    symbols=symbols,
+    call_graph=call_graph,
+    chip_profile=chip_profile,
+    dynamic_profile=dynamic_profile,
+    elf_path="firmware.elf",
+    opt_info_path="build/loops.log",
+    user_loop_bounds={"motor_control_loop": {"loop_0": 10}},
+    max_loop_bound=1000,
+    strict_bounds=False,
+)
 ```
 
-Determines Worst-Case Execution Time for every periodic task and ISR using the following priority chain:
+**`extract_wcets_for_tasks(...)`**  
+Computes worst-case execution time ($C_i$) for every periodic task and ISR:
+- **Priority 1 (`[SIMULATED]`):** Uses Renode retired instruction counts when a dynamic execution trace is provided.
+- **Priority 2 (`[IPET]` / `[IPET-ANNOTATED]` / `[IPET-CONSERVATIVE]`):** Reconstructs function Control Flow Graphs (CFGs), extracts loop bounds, annotates edges via ARM in-order pipeline simulation and 128-bit Flash prefetch buffer modeling, and solves the maximum cycle path using an Integer Linear Program (HiGHS branch-and-cut solver).
+- **Priority 3 (`[CALCULATED]`):** Fallback code-size linear heuristic parameterized by the target ARM core architecture ($BPI, CPI_{\mathrm{penalty}}$).
+- **Priority 4 (`[HEURISTIC]`):** 10-cycle placeholder assigned when a task's entry symbol is missing, raising a schedulability unreliability warning.
+- **Inter-Procedural Call-Tree DFS:** Traverses caller $\rightarrow$ callee edges, accumulates worst-case subtree cycles, detects recursion, and propagates weakest-link confidence tags.
+- **Hardware-Aware ISR Integration:** Vector table parsing, ARM exception stacking overhead ($12 + 12 = 24$ cycles), and Flash wait-state memory inflation ($C_{\mathrm{ISR}} = 24 + N_{\mathrm{insn}} \cdot (1 + w)$).
 
-1. **`[CALCULATED]` — Code-size heuristic:** Selects instruction density and CPI penalty automatically according to the target core in the chip YAML:
+---
 
-   | Core | Bytes/insn | CPI | Pipeline |
-   |---|---|---|---|
-   | Cortex-M0 / M0+ / M1 | 2.10 | 1.35 | ARMv6-M 16-bit Thumb, 2-stage |
-   | Cortex-M3 / M4 | 2.50 | 1.15 | ARMv7-M mixed Thumb-2, 3-stage |
-   | Cortex-M7 | 2.60 | 0.85 | ARMv7E-M superscalar dual-issue |
-   | Cortex-M23 | 2.15 | 1.30 | ARMv8-M Baseline |
-   | Cortex-M33 | 2.55 | 1.15 | ARMv8-M Mainline |
-   | Cortex-M55 / M85 | 2.65–2.70 | 0.75–0.90 | Helium vector / dual-issue |
+### IPET Engine (Implicit Path Enumeration)
 
-   Override globally or per-core via `bytes_per_instruction` and `cpi_penalty` in the chip YAML.
+The `analysis/ipet/` package implements the complete microarchitectural timing and ILP optimization suite:
 
-2. **`[SIMULATED]` — Renode functional trace:** Derived from execution cycle counts captured during live emulation.
-
-3. **Hardware-aware ISR integration:** Automatically excludes non-periodic exception handlers (`Reset_Handler`, `HardFault_Handler`, `NMI_Handler`) while modeling periodic device ISRs (`*_IRQHandler`) with hardware entry/return overhead (12 + 12 = 24 cycles baseline) plus Flash wait-state inflation.
-
-4. **`[HEURISTIC]` fallback:** Assigns a 10-cycle unmeasured placeholder when symbols are absent from the ELF table.
+| Module | Purpose |
+|---|---|
+| `analysis/ipet/cfg_builder.py` | Parses Thumb-2 instructions from ELF/objdump, discovers basic block boundaries, builds directed CFGs, and identifies loop headers via Tarjan's cycle algorithm |
+| `analysis/ipet/loop_bound_extractor.py` | Multi-tier loop bound engine: parses GCC `-fopt-info-loop` logs (SCEV), DWARF debug records, user JSON annotations, and induction variable comparisons |
+| `analysis/ipet/microarch/pipeline_model.py` | Simulates in-order pipeline execution latencies, load-use data hazard interlocks (1 stall cycle), multi-cycle hardware divide/multiply, and branch flush penalties |
+| `analysis/ipet/microarch/memory_model.py` | Models 128-bit wide Flash prefetch buffering, sequential cache-line hits (0 wait states), and non-sequential / branch wait-state stalls ($w$) |
+| `analysis/ipet/microarch/edge_annotator.py` | Integrates pipeline and memory models to compute exact cycle costs for each directed edge in the CFG |
+| `analysis/ipet/ilp_formulator.py` | Formulates basic block flow conservation laws and loop capacity constraints into an Integer Linear Program, solved via HiGHS |
+| `analysis/ipet/wcet_ipet.py` | High-level orchestrator executing Phases 1–5 for an individual function, returning cycle count, confidence tag, and critical path |
+| `analysis/ipet/visualizer.py` | Generates publication-grade Control Flow Graph diagrams (e.g. `cfg_system_init.png`) on clean white backgrounds |
 
 ---
 
@@ -1483,11 +1755,11 @@ python main.py \
 
 ### What This Tool Is Not
 
-- **Not a formal WCET verifier.** The `[CALCULATED]` WCET is an optimistic lower bound derived from code size and chip timing models. It cannot replace measured WCET from on-hardware profiling tools such as Segger SystemView or TRACE32.
+- **Not a black-box replacement for on-hardware trace verification.** While EmbedSched provides static microarchitectural bounds via IPET (`[IPET]`), safety-critical ISO 26262 / IEC 61508 certification requires hardware trace verification (e.g. Lauterbach TRACE32 or Segger SystemView) alongside static models.
 
-- **Not a replacement for aiT or TA Tool Suite.** Those tools provide sound WCET bounds via abstract interpretation. EmbedSched provides screening-level estimates for pre-hardware development phases.
+- **Not a commercial abstract-interpretation suite.** Commercial tools (e.g. aiT, SymTA/S) feature complex cache abstract domains across arbitrary out-of-order superscalar architectures. EmbedSched targets in-order ARM Cortex-M microarchitectures with exact pipeline and Flash prefetch buffer modeling.
 
-- **Not sufficient for safety certification alone.** Do not use `[CALCULATED]` WCETs as sole evidence in an ISO 26262 or IEC 61508 safety case without hardware validation.
+- **Fallback heuristic caveat:** When falling back to `[CALCULATED]` (code-size heuristic), estimates represent linear screening values. Users should provide ELF binaries and GCC optimization logs to enable full `[IPET]` microarchitectural bounds.
 
 **What it is:** A CI-compatible pre-hardware screening tool that catches gross timing violations, memory placement errors, and configuration bugs before hardware is available — with explicit confidence tags on every finding.
 
