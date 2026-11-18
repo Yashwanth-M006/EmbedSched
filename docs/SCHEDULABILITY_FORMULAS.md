@@ -201,7 +201,7 @@ To prevent unbounded priority inversion, EmbedSched implements the **Priority Ce
 ```
 
 **LaTeX Formula:**
-$$\text{Ceiling}(r) = \min_{\tau \in \text{accessed\_by}(r)} \text{Priority}(\tau)$$
+$$\text{Ceiling}(r) = \min_{\tau \in \text{accessed}_{\text{by}}(r)} \text{Priority}(\tau)$$
 
 ---
 
@@ -410,7 +410,7 @@ In single-stack embedded architectures (e.g., bare-metal or FreeRTOS MSP):
 
 **LaTeX Formula:**
 $$\text{Stack}_{\text{worst-case}} = \sum_{i=1}^n \text{FrameDepth}(\tau_i)$$
-$$\text{Margin}_{\text{stack}} = \text{\_Min\_Stack\_Size} - \text{Stack}_{\text{worst-case}}$$
+$$\text{Margin}_{\text{stack}} = \text{Min-Stack-Size} - \text{Stack}_{\text{worst-case}}$$
 
 ---
 
@@ -452,4 +452,4 @@ The overall report verdict inherits the weakest link in the calculation chain:
 | **Exact RTA** | $R_i^{(k+1)}$ | $C_i + B_i + \sum_{j \in \text{hp}(i)} \lceil R_i^{(k)} / T_j \rceil C_j$ | Terminate when $R_i^{(k+1)} = R_i^{(k)} \le D_i$ |
 | **EDF Bound** | $U_{\text{EDF}}$ | $\sum_{i=1}^n ((C_i + B_i) / T_i) \le 1.0$ | Schedulable if $\le 100\%$ ($D_i = T_i$) |
 | **EDF Demand** | $h(L)$ | $\sum \max(0, \lfloor \frac{L + T_i - D_i}{T_i} \rfloor) (C_i + B_i)$ | $\forall L \in \mathcal{D}, h(L) \le L$ |
-| **Stack Depth** | $\text{Stack}_{\text{worst}}$ | $\sum_{i=1}^n \text{FrameDepth}(\tau_i)$ | Must be $\le \text{\_Min\_Stack\_Size}$ |
+| **Stack Depth** | $\text{Stack}_{\text{worst}}$ | $\sum_{i=1}^n \text{FrameDepth}(\tau_i)$ | Must be $\le \text{Min-Stack-Size}$ |

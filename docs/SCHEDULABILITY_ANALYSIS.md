@@ -171,7 +171,7 @@ In multicore embedded processors (e.g., STM32H745 with Cortex-M7 Core 0 and Cort
 3. **Inter-Core Communication (IPC) Latency Bound:**
    When a cross-core channel exists between $\tau_{\text{sender}}$ (Core 0) and $\tau_{\text{receiver}}$ (Core 1) through shared memory (e.g. `SRAM3`):
    - **Hardware Spinlock Contention:** Cortex-M hardware test-and-set semaphore takes 8 cycles on the receiver core:
-     $$t_{\text{spin}} = \frac{\text{spinlock\_cycles}}{f_{\text{receiver}}}$$
+     $$t_{\text{spin}} = \frac{\text{spinlock}_{\text{cycles}}}{f_{\text{receiver}}}$$
    - **Total IPC Delay:**
      $$B_{\text{IPC}} = \text{Write Latency} + t_{\text{spin}}$$
    This delay is added directly to the blocking term $B_i$ of the receiver task.
@@ -185,7 +185,7 @@ When tasks share mutual exclusion locks (mutexes), priority inversion can occur.
 ### A. Resource Priority Ceiling
 For every shared resource $r$:
 
-$$\text{Ceiling}(r) = \min_{\tau \in \text{accessed\_by}(r)} \text{Priority}(\tau)$$
+$$\text{Ceiling}(r) = \min_{\tau \in \text{accessed}_{\text{by}}(r)} \text{Priority}(\tau)$$
 
 *(In EmbedSched, smaller integer = higher priority; Priority 1 is highest).*
 
@@ -309,7 +309,7 @@ $$\text{Stack}_{\text{worst-case}} = \sum_{i=1}^n \text{FrameDepth}(\tau_i)$$
 
 EmbedSched traverses the static call graph, sums `.su` file frame sizes, and evaluates against linker script allocation:
 
-$$\text{Margin}_{\text{stack}} = \text{\_Min\_Stack\_Size} - \text{Stack}_{\text{worst-case}}$$
+$$\text{Margin}_{\text{stack}} = \text{Min-Stack-Size} - \text{Stack}_{\text{worst-case}}$$
 
 $$\text{Margin}_{\text{stack}} < 0 \implies \mathbf{WARNING:\ Concurrent\ Stack\ Overflow\ Risk}$$
 
@@ -441,14 +441,14 @@ $$\mathbf{Margin}_B = 6,000 - 6,200 = \mathbf{-200\ \mu\text{s}} \implies \mathb
   - $\tau_L$: $T = 40\text{ ms}, D = 40\text{ ms}, C = 8.0\text{ ms}, P = 3$ (uses `mutex_spi` for 3.0 ms, `mutex_i2c` for 4.5 ms)
 
 #### Ceilings:
-- $\text{Ceiling}(\text{mutex\_spi}) = 1$
-- $\text{Ceiling}(\text{mutex\_i2c}) = 2$
+- $\text{Ceiling}(\text{mutex}_{\text{spi}}) = 1$
+- $\text{Ceiling}(\text{mutex}_{\text{i2c}}) = 2$
 
 #### PCP Blocking Calculation:
 - For $\tau_H$ (Priority 1):
-  $$B_H = \max(CS(\text{mutex\_spi}, \tau_L)) = \mathbf{3.0\text{ ms}}$$
+  $$B_H = \max(CS(\text{mutex}_{\text{spi}}, \tau_L)) = \mathbf{3.0\text{ ms}}$$
 - For $\tau_M$ (Priority 2):
-  $$B_M = \max(CS(\text{mutex\_spi}, \tau_L), CS(\text{mutex\_i2c}, \tau_L)) = \max(3.0, 4.5) = \mathbf{4.5\text{ ms}}$$
+  $$B_M = \max(CS(\text{mutex}_{\text{spi}}, \tau_L), CS(\text{mutex}_{\text{i2c}}, \tau_L)) = \max(3.0, 4.5) = \mathbf{4.5\text{ ms}}$$
   *(Single-critical-section bound prevents summing $3.0 + 4.5 = 7.5\text{ ms}$).*
 
 #### Extended RTA with Blocking:

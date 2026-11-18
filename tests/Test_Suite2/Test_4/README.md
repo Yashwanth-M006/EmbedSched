@@ -91,14 +91,14 @@ Under PCP, a task $\tau_i$ can be blocked by at most one critical section belong
 $$B_i = \max_{j \in \text{lp}(i)} \max_{R \in \text{Res}(j), \text{Ceiling}(R) \le Prio(i)} CS(j, R)$$
 
 1. **Blocking for `Task_H` ($Prio = 1$):**
-   * Lower-priority tasks: $\text{lp}(H) = \{\text{Task\_M}, \text{Task\_L}\}$
+   * Lower-priority tasks: $\text{lp}(H) = \{\text{Task}_M, \text{Task}_L\}$
    * Mutexes with $\text{Ceiling} \le 1$: `mutex_spi` ($\text{Ceiling} = 1$).
-   * $B_H = CS(\text{Task\_L}, \text{mutex\_spi}) = \mathbf{3,000.00\text{ µs}}$
+   * $B_H = CS(\text{Task}_L, \text{mutex}_{\text{spi}}) = \mathbf{3,000.00\text{ µs}}$
 
 2. **Blocking for `Task_M` ($Prio = 2$):**
-   * Lower-priority tasks: $\text{lp}(M) = \{\text{Task\_L}\}$
+   * Lower-priority tasks: $\text{lp}(M) = \{\text{Task}_L\}$
    * Mutexes with $\text{Ceiling} \le 2$: `mutex_spi` ($\text{Ceiling} = 1$) and `mutex_i2c` ($\text{Ceiling} = 2$).
-   * $B_M = \max(CS(\text{Task\_L}, \text{mutex\_spi}), CS(\text{Task\_L}, \text{mutex\_i2c})) = \max(3.0\text{ ms}, 4.5\text{ ms}) = \mathbf{4,500.00\text{ µs}}$
+   * $B_M = \max(CS(\text{Task}_L, \text{mutex}_{\text{spi}}), CS(\text{Task}_L, \text{mutex}_{\text{i2c}})) = \max(3.0\text{ ms}, 4.5\text{ ms}) = \mathbf{4,500.00\text{ µs}}$
 
 3. **Blocking for `Task_L` ($Prio = 3$, Lowest):**
    * $\text{lp}(L) = \emptyset \implies B_L = \mathbf{0.00\text{ µs}}$
@@ -116,7 +116,7 @@ $$R_i^{(k+1)} = C_i + B_i + \sum_{j \in \text{hp}(i)} \left\lceil \frac{R_i^{(k)
 * **Slack Margin:** $10,000 - 8,299 = \mathbf{+1,701.00\text{ µs}}$ (`PASS`)
 
 #### Task M (Priority 2, $T_M = 20,000\text{ µs}, D_M = 20,000\text{ µs}$):
-* $\text{hp}(M) = \{\text{Task\_H}\}$
+* $\text{hp}(M) = \{\text{Task}_H\}$
 * $R_M^{(0)} = C_M + B_M = 3,533.00 + 4,500.00 = 8,033.00\text{ µs}$
 * $R_M^{(1)} = 3,533 + 4,500 + \left\lceil \frac{8,033}{10,000} \right\rceil \times 5,299 = 8,033 + 5,299 = 13,332.00\text{ µs}$
 * $R_M^{(2)} = 3,533 + 4,500 + \left\lceil \frac{13,332}{10,000} \right\rceil \times 5,299 = 8,033 + (2 \times 5,299) = 18,631.00\text{ µs}$
@@ -124,7 +124,7 @@ $$R_i^{(k+1)} = C_i + B_i + \sum_{j \in \text{hp}(i)} \left\lceil \frac{R_i^{(k)
 * **Slack Margin:** $20,000 - 18,631 = \mathbf{+1,369.00\text{ µs}}$ (`PASS`)
 
 #### Task L (Priority 3, $T_L = 40,000\text{ µs}, D_L = 40,000\text{ µs}$):
-* $\text{hp}(L) = \{\text{Task\_H}, \text{Task\_M}\}$
+* $\text{hp}(L) = \{\text{Task}_H, \text{Task}_M\}$
 * Preempted by higher-priority tasks $H$ and $M$:
 * RTA converges at $R_L = \mathbf{42,393.00\text{ µs}} > 40,000\text{ µs}$
 * **Slack Margin:** $40,000 - 42,393 = \mathbf{-2,393.00\text{ µs}}$

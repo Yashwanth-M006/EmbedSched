@@ -67,7 +67,7 @@ Because the tasks are scheduled under preemptive Rate Monotonic priority ($P_{\t
 $$\text{Stack}_{\text{concurrent}} = \sum_{i=1}^{3} \text{Stack}(\tau_i) = 912 + 1,408 + 1,808 = \mathbf{4,128\text{ bytes}}$$
 
 #### 3. Stack Overflow Margin Evaluation:
-$$\text{Margin}_{\text{stack}} = \text{\_Min\_Stack\_Size} - \text{Stack}_{\text{concurrent}} = 4,096\text{ B} - 4,128\text{ B} = \mathbf{-32\text{ bytes}}$$
+$$\text{Margin}_{\text{stack}} = \text{Min-Stack-Size} - \text{Stack}_{\text{concurrent}} = 4,096\text{ B} - 4,128\text{ B} = \mathbf{-32\text{ bytes}}$$
 
 The concurrent worst-case stack depth **exceeds declared stack capacity by 32 bytes**. Under worst-case scheduling alignment, the stack pointer decrements below the DTCM stack boundary, corrupting adjacent memory. The analyzer flags warning `autosar_concurrent_stack` (-20 points deduction).
 

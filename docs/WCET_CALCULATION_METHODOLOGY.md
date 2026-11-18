@@ -124,12 +124,12 @@ Task Entry: Task_MotorControl (80 bytes)
    - Computes local cycles for the entry function: $\text{Cycles}_{\text{own}}$.
    - Recursively traverses all callees listed in the call graph.
    - For multiple branches, EmbedSched selects the **worst-case branch**:
-     $$\text{Cycles}_{\text{task}} = \text{Cycles}_{\text{own}} + \max_{\text{callee} \in \text{Callees}} \left( \text{Cycles}_{\text{callee\_subtree}} \right)$$
+     $$\text{Cycles}_{\text{task}} = \text{Cycles}_{\text{own}} + \max_{\text{callee} \in \text{Callees}} \left( \text{Cycles}_{\text{callee}_{\text{subtree}}} \right)$$
 2. **Recursion Protection:**
    - A `visited` set tracks currently active functions in the call stack to prevent infinite recursion on recursive or re-entrant code.
 3. **Call Chain Preservation:**
    - Preserves the worst-case execution path:
-     $$\text{Chain} = [\text{Task\_MotorControl}, \text{read\_adc\_sensors}, \text{calibrate\_offset}]$$
+     $$\text{Chain} = [\text{Task}_{\text{Motor}}, \text{read-adc-sensors}, \text{calibrate-offset}]$$
 4. **Confidence Contamination Propagation:**
    - The tag of the task becomes the **lowest confidence tag** among the entry function and any visited callee:
      $$\text{Tag}_{\text{task}} = \min \left( \text{Tag}_{\text{own}}, \min_{\text{callee}} \text{Tag}_{\text{callee}} \right)$$
@@ -216,7 +216,7 @@ $$\text{Total Cycles} = \text{Cycles}_{\text{own}} + \text{Cycles}_{\text{filter
 ### Step 3: Convert to Microseconds
 $$C_i = \frac{253 \text{ cycles}}{168 \text{ MHz}} = 1.50595\,\mu\text{s} \xrightarrow{\text{round to 2 decimals}} \mathbf{1.51\,\mu\text{s}}$$
 $$\text{Confidence Tag} = \mathbf{[CALCULATED]}$$
-$$\text{Call Chain} = \mathbf{[\text{Task\_SpeedEstimate}, \text{filter\_kalman}]}$$
+$$\text{Call Chain} = \mathbf{[\text{Task}_{\text{Speed}}, \text{filter-kalman}]}$$
 
 ---
 

@@ -48,7 +48,7 @@ $$U = \sum_{i=1}^{3} \frac{C_i}{T_i} = 0.2500 + 0.4000 + 0.1500 = \mathbf{0.8000
 
 **EDF Bound Comparison:**
 For implicit deadlines under EDF:
-$$U_{\text{EDF\_bound}} = 1.0000\ (100.0\%)$$
+$$U_{\text{EDF}_{\text{bound}}} = 1.0000\ (100.0\%)$$
 $$U = 80.0\% \le 100.0\% \implies \mathbf{GUARANTEED\ SCHEDULABLE}$$
 
 EmbedSched displays:

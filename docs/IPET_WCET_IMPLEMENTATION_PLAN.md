@@ -262,14 +262,14 @@ For each directed edge $(u \to v)$ in the CFG:
 2. **Fetch Penalty**: If entering via a branch, the prefetch buffer is cold ($1 + \text{WaitStates}$). If entering via fall-through, the prefetch state evaluates whether the block boundary crossed a 16-byte physical Flash line.
 3. **Block Execution**: The block instructions are simulated through the pipeline state machine, including intra-block load-use hazard checks.
 4. The total cycle cost is summed and assigned directly to edge $(u \to v)$.
-5. A virtual ingress edge $(\text{\_\_entry\_\_} \to \text{entry\_bb})$ is created and assigned the cold entry flush penalty, cold fetch latency, and entry block execution cycles.
+5. A virtual ingress edge $(\text{entry} \to \text{entry}_{\text{bb}})$ is created and assigned the cold entry flush penalty, cold fetch latency, and entry block execution cycles.
 
 ---
 
 ### 3.5 Phase 5: Integer Linear Programming (ILP) Formulation
 
 #### 3.5.1 Decision Variables
-Let $G = (V, E)$ represent the function CFG, where $V$ is the set of basic blocks augmented with virtual nodes $\{\text{\_\_entry\_\_}, \text{\_\_exit\_\_}\}$, and $E$ is the set of directed control flow edges.
+Let $G = (V, E)$ represent the function CFG, where $V$ is the set of basic blocks augmented with virtual nodes $\{\text{entry}, \text{exit}\}$, and $E$ is the set of directed control flow edges.
 
 For each directed edge $e = (u \to v) \in E$, the ILP defines an integer decision variable:
 $$x_e \in \mathbb{Z}_{\ge 0}$$
@@ -283,15 +283,15 @@ where $\text{Cost}(e)$ is the microarchitectural cycle latency computed in Phase
 #### 3.5.3 Structural Flow Conservation Constraints
 To ensure the edge execution frequencies form a topologically valid execution path through the control flow graph, Kirchhoff-like flow conservation constraints are applied to every basic block node:
 
-$$\sum_{e \in \text{In}(v)} x_e = \sum_{e \in \text{Out}(v)} x_e \quad \forall v \in V \setminus \{\text{\_\_entry\_\_}, \text{\_\_exit\_\_}\}$$
+$$\sum_{e \in \text{In}(v)} x_e = \sum_{e \in \text{Out}(v)} x_e \quad \forall v \in V \setminus \{\text{entry}, \text{exit}\}$$
 
 where $\text{In}(v) = \{(u \to v) \in E\}$ and $\text{Out}(v) = \{(v \to w) \in E\}$.
 
 #### 3.5.4 Ingress and Egress Normalization
 The function is invoked exactly once per activation:
-$$x_{(\text{\_\_entry\_\_} \to \text{entry\_bb})} = 1$$
+$$x_{(\text{entry} \to \text{entry}_{\text{bb}})} = 1$$
 Similarly, the function terminates exactly once:
-$$\sum_{e \in \text{In}(\text{\_\_exit\_\_})} x_e = 1$$
+$$\sum_{e \in \text{In}(\text{exit})} x_e = 1$$
 
 #### 3.5.5 Structural Loop Capacity Constraints
 For every natural loop $L$ having header block $h \in V$, loop latch back-edge $e_{\text{back}} = (\text{latch} \to h)$, and loop bound $N_L$ extracted in Phase 3:
@@ -324,7 +324,7 @@ Firmware execution extends beyond isolated subroutines into call trees. The glob
    - `BL` causes an indirect branch pipeline flush (3 cycles on Cortex-M4, 3 on M3, 2 on M0).
    - Calling does not trigger automatic hardware register stacking (hardware stacking occurs only on interrupt service routines). Software stack allocation (`PUSH {r4-r7, lr}`) and deallocation (`POP {r4-r7, pc}`) are accounted for within callee $B$'s own ILP analysis.
    - The caller's call-site edge incorporates both the callee's worst-case cycle latency and the calling instruction's pipeline flush penalty:
-     $$\text{Cost}_{\text{call\_edge}} = \text{Penalty}_{\text{BL\_flush}} + \text{Penalty}_{\text{fetch}} + \text{WCET}_{\text{callee}} + \text{Cost}_{\text{return\_site}}$$
+     $$\text{Cost}_{\text{call}_{\text{edge}}} = \text{Penalty}_{\text{BL}_{\text{flush}}} + \text{Penalty}_{\text{fetch}} + \text{WCET}_{\text{callee}} + \text{Cost}_{\text{return}_{\text{site}}}$$
 
 #### 3.6.2 Physical Timing Conversion
 Cycle counts are converted to wall-clock microseconds ($\mu\text{s}$) using the target core operating frequency specified in the microcontroller chip profile:

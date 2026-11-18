@@ -39,7 +39,7 @@ Three periodic tasks on Core 0 sharing a single stack allocation declared in `li
 | $\tau_3$ | **3 (Lowest)** | $20\text{ ms}$ | $20\text{ ms}$ | $\mathbf{800\text{ B}}$ | $\mathbf{800\text{ B}}$ | Preempted by $\tau_2$ and $\tau_1$ |
 
 **Declared Stack Size in Linker Script:**
-$$\text{Declared Capacity} = \text{\_Min\_Stack\_Size} = 2,400\text{ Bytes}\ (0\text{x}0960)$$
+$$\text{Declared Capacity} = \text{Min-Stack-Size} = 2,400\text{ Bytes}\ (0\text{x}0960)$$
 
 ---
 

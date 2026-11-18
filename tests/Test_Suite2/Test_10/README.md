@@ -80,14 +80,14 @@ Pure timing analysis reports 100% schedulability with huge slack margins.
 
 ### C. Directed Lock-Dependency Graph & Cycle Detection Math
 
-Let $\mathcal{R} = \{\text{mutex\_A}, \text{mutex\_B}\}$ be the set of mutual exclusion locks.  
+Let $\mathcal{R} = \{\text{mutex}_A, \text{mutex}_B\}$ be the set of mutual exclusion locks.  
 A directed edge $(r_1 \to r_2)$ exists in the lock-dependency graph $G = (V, E)$ if any task acquires $r_2$ while already holding $r_1$.
 
 #### Edge Construction:
 1. `Task_Core0_Alpha`:
-   $$\text{Order} = \langle \text{mutex\_A}, \text{mutex\_B} \rangle \implies (\text{mutex\_A} \longrightarrow \text{mutex\_B}) \in E$$
+   $$\text{Order} = \langle \text{mutex}_A, \text{mutex}_B \rangle \implies (\text{mutex}_A \longrightarrow \text{mutex}_B) \in E$$
 2. `Task_Core1_Beta`:
-   $$\text{Order} = \langle \text{mutex\_B}, \text{mutex\_A} \rangle \implies (\text{mutex\_B} \longrightarrow \text{mutex\_A}) \in E$$
+   $$\text{Order} = \langle \text{mutex}_B, \text{mutex}_A \rangle \implies (\text{mutex}_B \longrightarrow \text{mutex}_A) \in E$$
 
 #### Adjacency Matrix Representation:
 $$M = \begin{pmatrix} 0 & 1 \\ 1 & 0 \end{pmatrix}$$
@@ -97,7 +97,7 @@ $$M = \begin{pmatrix} 0 & 1 \\ 1 & 0 \end{pmatrix}$$
 2. Follow outgoing edge to `mutex_B`: mark `mutex_B` active.
 3. Follow outgoing edge from `mutex_B` to `mutex_A`.
 4. Node `mutex_A` is already in the active recursion stack:
-   $$\text{Directed Cycle Detected:}\quad \mathbf{\text{mutex\_A} \longrightarrow \text{mutex\_B} \longrightarrow \text{mutex\_A}}$$
+   $$\text{Directed Cycle Detected:}\quad \mathbf{\text{mutex}_A \longrightarrow \text{mutex}_B \longrightarrow \text{mutex}_A}$$
 
 This satisfies **Coffman Condition #4 (Circular Wait)**:
 $$\exists\ \text{Cycle in } G \implies \mathbf{DEADLOCK\ RISK\ (CRITICAL)}$$

@@ -61,10 +61,10 @@ D(i, j-1) + 1 & \text{(Insertion)} \\
 D(i-1, j-1) + \mathbb{I}(s_1[i] \ne s_2[j]) & \text{(Substitution)}
 \end{cases}$$
 
-For $s_1 = \text{"motor\_controll\_loop"}$ and $s_2 = \text{"motor\_control\_loop"}$:
+For $s_1 =$ `"motor_controll_loop"` and $s_2 =$ `"motor_control_loop"`:
 * Prefix `"motor_contro"` matches character for character ($D(12, 12) = 0$).
 * At index 13: $s_1[13] = \text{'l'}$, while $s_2[13] = \text{'l'}$.
-* At index 14: $s_1[14] = \text{'l'}$, while $s_2[14] = \text{'\_'}$. One deletion of `'l'` reconciles the sequences.
+* At index 14: $s_1[14] = \text{'l'}$, while $s_2[14] =$ `'_'`. One deletion of `'l'` reconciles the sequences.
 * Remaining suffix `"_loop"` matches perfectly.
 
 $$\text{Levenshtein Distance} = D(19, 18) = \mathbf{1}$$
@@ -103,7 +103,7 @@ Because `Task_MotorControl` is excluded, the partial system contains only `Task_
    * **Slack Margin:** $20,000 - 71.00 = \mathbf{+19,929.00\text{ µs}}$ (`PASS`)
 
 2. **`Task_CANTransmit` ($T = 100,000\text{ µs}, D = 100,000\text{ µs}$):**
-   * $\text{hp}(\text{CAN}) = \{\text{Task\_SensorAgg}\}$
+   * $\text{hp}(\text{CAN}) = \{\text{Task}_{\text{Sensor}}\}$
    * Recurrence iterations:
      $$R_{\text{CAN}}^{(0)} = C_{\text{CAN}} = 35.00\text{ µs}$$
      $$R_{\text{CAN}}^{(1)} = 35.00 + \left\lceil \frac{35.00}{20,000} \right\rceil \times 71.00 = 35.00 + 71.00 = \mathbf{106.00\text{ µs}}\quad (\text{Converged})$$
