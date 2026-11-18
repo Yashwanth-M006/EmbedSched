@@ -1,4 +1,4 @@
-
+```
 [AUTOSAR] Loading task configuration...
 [AUTOSAR] Extracting WCETs from firmware artifacts via IPET...
 [AUTOSAR] Priority ordering mode: Standard (lower number = higher priority)
@@ -205,4 +205,4 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
   (e.g. Segger SystemView, TRACE32) to validate these estimates.
 
 ========================================================================
-
+```

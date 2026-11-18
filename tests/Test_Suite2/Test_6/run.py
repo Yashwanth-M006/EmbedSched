@@ -16,5 +16,9 @@ cmd = [
 env = os.environ.copy()
 env['PYTHONIOENCODING'] = 'utf-8'
 
+proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
+
 with open('results.md', 'w', encoding='utf-8') as f:
-    subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT, env=env)
+    f.write("```\n")
+    f.write(proc.stdout.strip())
+    f.write("\n```\n")

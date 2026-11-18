@@ -1,3 +1,4 @@
+```
 e:\firmware_analyzer\report\matplotlib_charts.py:208: UserWarning: Tight layout not applied. The left and right margins cannot be made large enough to accommodate all Axes decorations.
   plt.tight_layout()
 
@@ -206,4 +207,4 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
   (e.g. Segger SystemView, TRACE32) to validate these estimates.
 
 ========================================================================
-
+```

@@ -1,4 +1,4 @@
-
+```
 [AUTOSAR] Loading task configuration...
 [AUTOSAR] Extracting WCETs from firmware artifacts via IPET...
 [AUTOSAR] Priority ordering mode: Standard (lower number = higher priority)
@@ -108,9 +108,9 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
   ────────────────────────────────────────────────────────────────────────────
   Task                    Activations  Max Jitter µs  Mean Jitter µs Assessment
   ────────────────────────────────────────────────────────────────────────────
-  Task_CANTransmit                  1         194.81          194.81  EXCELLENT (<1% of period)
+  Task_CANTransmit                  1         193.02          193.02  EXCELLENT (<1% of period)
   Task_MotorControl               100           0.00            0.00  EXCELLENT (<1% of period)
-  Task_SensorAgg                    5         139.78          132.44  EXCELLENT (<1% of period)
+  Task_SensorAgg                    5         138.49          132.84  EXCELLENT (<1% of period)
   ────────────────────────────────────────────────────────────────────────────
   NOTE: Jitter is measured against the ideal periodic release time.
   Non-zero jitter is caused by higher-priority task preemption.
@@ -152,4 +152,4 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
   (e.g. Segger SystemView, TRACE32) to validate these estimates.
 
 ========================================================================
-
+```

@@ -1,4 +1,4 @@
-
+```
 [AUTOSAR] Loading task configuration...
 Error: Task_MotorControl: entry function 'motor_controll_loop' not found in firmware symbols
 Did you mean 'motor_control_loop'? (Levenshtein distance: 1)
@@ -112,7 +112,7 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
   ────────────────────────────────────────────────────────────────────────────
   Task                    Activations  Max Jitter µs  Mean Jitter µs Assessment
   ────────────────────────────────────────────────────────────────────────────
-  Task_CANTransmit                  1          69.43           69.43  EXCELLENT (<1% of period)
+  Task_CANTransmit                  1          64.75           64.75  EXCELLENT (<1% of period)
   Task_SensorAgg                    5           0.00            0.00  EXCELLENT (<1% of period)
   ────────────────────────────────────────────────────────────────────────────
   NOTE: Jitter is measured against the ideal periodic release time.
@@ -155,4 +155,4 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
   (e.g. Segger SystemView, TRACE32) to validate these estimates.
 
 ========================================================================
-
+```

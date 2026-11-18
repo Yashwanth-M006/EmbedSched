@@ -1,3 +1,4 @@
+```
 ﻿
 [AUTOSAR] Loading task configuration...
 [AUTOSAR] Extracting WCETs from firmware artifacts...
@@ -383,4 +384,4 @@ EXECUTIVE SUMMARY: SCHEDULABILITY OVERVIEW
   (e.g. Segger SystemView, TRACE32) to validate these estimates.
 
 ========================================================================
-
+```
