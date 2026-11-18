@@ -109,6 +109,79 @@ Solving Joseph & Pandya's recurrence: $R_i^{(k+1)} = C_i + \sum_{j \in \text{hp}
 
 ---
 
+### D. Start-Time Jitter Analysis & Graph Validation
+
+#### 1. Mathematical Formulation
+In a hard real-time preemptive system, the ideal periodic release time for activation $k$ ($k \in \{0, 1, \dots, K_i - 1\}$) of task $\tau_i$ is:
+$$t_{\text{rel}}(k) = k \cdot T_i$$
+
+Under work-conserving, non-anticipative scheduling, a task cannot start prior to its release ($s_i(k) \ge t_{\text{rel}}(k)$). The start-time jitter $J_i(k)$ quantifies the non-negative dispatch latency incurred due to higher-priority task preemption or lower-priority blocking:
+$$J_i(k) = s_i(k) - k \cdot T_i \ge 0$$
+
+Across all $K_i = \lfloor H / T_i \rfloor$ timely activations over the simulation hyperperiod $H$:
+* **Maximum Start-Time Jitter ($J_i^{\max}$):**
+  $$J_i^{\max} = \max_{0 \le k < K_i} J_i(k)$$
+* **Mean Start-Time Jitter ($J_i^{\text{mean}}$):**
+  $$J_i^{\text{mean}} = \frac{1}{K_i} \sum_{k=0}^{K_i - 1} J_i(k)$$
+* **Relative Jitter Ratio ($\rho_i$):**
+  $$\rho_i = \frac{J_i^{\max}}{T_i} \times 100\%$$
+* **Safety Assessment Classification:**
+  - $\rho_i < 1\%$: **EXCELLENT** (negligible phase distortion; safe for high-frequency control loops)
+  - $1\% \le \rho_i < 5\%$: **GOOD** (acceptable for general actuator & sensor processing)
+  - $5\% \le \rho_i < 20\%$: **MODERATE** (detectable variation; acceptable for supervisory tasks)
+  - $\rho_i \ge 20\%$: **HIGH WARNING** (significant preemption delay; risks control instability)
+
+#### 2. Step-by-Step Task Jitter Calculations (Hyperperiod $H = Hyperperiod$)
+1. **`Task_A` (Priority 1, $T = 7,000\text{ µs}$, $K = 5$ activations):**
+   * **Interference:** Highest-priority task on Core 0; no higher-priority preemptions ($hp = \emptyset$).
+   * **Dispatch:** Dispatches immediately at $s_i(k) = k \cdot 7,000\text{ µs}$ for every activation $k$.
+   * **Calculated Metrics:** $J^{\max} = \mathbf{0.00\text{ µs}}$, $J^{\text{mean}} = \mathbf{0.00\text{ µs}}$, $\rho = \mathbf{0.00\%} \implies$ **EXCELLENT (<1% of period)**.
+
+2. **`Task_B` (Priority 2, $T = 11,000\text{ µs}$, $K = 3$ activations):**
+   * **Interference:** Preempted by higher-priority workload: `Task_A` (105.00 µs) (total synchronous release load $\sum C_{hp} = 105.00\text{ µs}$).
+   * **Theoretical Start Delay Bound:** At synchronous release $t = 0$ ($k = 0$), start delay is upper-bounded by $J_{\text{bound}} = \sum_{j \in hp} C_j = \mathbf{105.00\text{ µs}}$.
+   * **Simulated Dispatch:** Under discrete-event simulation (with stochastic execution times), actual observed worst-case start delay is $s_i(k) - k \cdot T_i = 95.36\text{ µs}$.
+   * **Calculated Metrics:** $J^{\max} = \mathbf{95.36\text{ µs}}$, $J^{\text{mean}} = \mathbf{31.79\text{ µs}}$, $\rho = \frac{95.36}{11,000} \times 100\% = \mathbf{0.87\%} \implies$ **EXCELLENT (<1% of period)**.
+
+3. **`Task_C` (Priority 3, $T = 13,000\text{ µs}$, $K = 3$ activations):**
+   * **Interference:** Preempted by higher-priority workload: `Task_A` (105.00 µs), `Task_B` (105.00 µs) (total synchronous release load $\sum C_{hp} = 210.00\text{ µs}$).
+   * **Theoretical Start Delay Bound:** At synchronous release $t = 0$ ($k = 0$), start delay is upper-bounded by $J_{\text{bound}} = \sum_{j \in hp} C_j = \mathbf{210.00\text{ µs}}$.
+   * **Simulated Dispatch:** Under discrete-event simulation (with stochastic execution times), actual observed worst-case start delay is $s_i(k) - k \cdot T_i = 194.80\text{ µs}$.
+   * **Calculated Metrics:** $J^{\max} = \mathbf{194.80\text{ µs}}$, $J^{\text{mean}} = \mathbf{64.93\text{ µs}}$, $\rho = \frac{194.80}{13,000} \times 100\% = \mathbf{1.50\%} \implies$ **GOOD (<5% of period)**.
+
+4. **`Task_D` (Priority 4, $T = 17,000\text{ µs}$, $K = 2$ activations):**
+   * **Interference:** Preempted by higher-priority workload: `Task_A` (105.00 µs), `Task_B` (105.00 µs), `Task_C` (105.00 µs) (total synchronous release load $\sum C_{hp} = 315.00\text{ µs}$).
+   * **Theoretical Start Delay Bound:** At synchronous release $t = 0$ ($k = 0$), start delay is upper-bounded by $J_{\text{bound}} = \sum_{j \in hp} C_j = \mathbf{315.00\text{ µs}}$.
+   * **Simulated Dispatch:** Under discrete-event simulation (with stochastic execution times), actual observed worst-case start delay is $s_i(k) - k \cdot T_i = 294.13\text{ µs}$.
+   * **Calculated Metrics:** $J^{\max} = \mathbf{294.13\text{ µs}}$, $J^{\text{mean}} = \mathbf{147.06\text{ µs}}$, $\rho = \frac{294.13}{17,000} \times 100\% = \mathbf{1.73\%} \implies$ **GOOD (<5% of period)**.
+
+5. **`Task_E` (Priority 5, $T = 19,000\text{ µs}$, $K = 2$ activations):**
+   * **Interference:** Preempted by higher-priority workload: `Task_A` (105.00 µs), `Task_B` (105.00 µs), `Task_C` (105.00 µs), `Task_D` (105.00 µs) (total synchronous release load $\sum C_{hp} = 420.00\text{ µs}$).
+   * **Theoretical Start Delay Bound:** At synchronous release $t = 0$ ($k = 0$), start delay is upper-bounded by $J_{\text{bound}} = \sum_{j \in hp} C_j = \mathbf{420.00\text{ µs}}$.
+   * **Simulated Dispatch:** Under discrete-event simulation (with stochastic execution times), actual observed worst-case start delay is $s_i(k) - k \cdot T_i = 394.06\text{ µs}$.
+   * **Calculated Metrics:** $J^{\max} = \mathbf{394.06\text{ µs}}$, $J^{\text{mean}} = \mathbf{197.03\text{ µs}}$, $\rho = \frac{394.06}{19,000} \times 100\% = \mathbf{2.07\%} \implies$ **GOOD (<5% of period)**.
+
+#### 3. Jitter Summary Table
+| Task Name | Priority | Period ($T_i$) | Activations ($K_i$) | Max Jitter ($J_i^{\max}$) | Mean Jitter ($J_i^{\text{mean}}$) | Jitter Ratio ($\rho_i$) | Assessment |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
+| `Task_A` | 1 | `7,000 µs` | 5 | `0.00 µs` | `0.00 µs` | `0.00%` | **EXCELLENT (<1% of period)** |
+| `Task_B` | 2 | `11,000 µs` | 3 | `95.36 µs` | `31.79 µs` | `0.87%` | **EXCELLENT (<1% of period)** |
+| `Task_C` | 3 | `13,000 µs` | 3 | `194.80 µs` | `64.93 µs` | `1.50%` | **GOOD (<5% of period)** |
+| `Task_D` | 4 | `17,000 µs` | 2 | `294.13 µs` | `147.06 µs` | `1.73%` | **GOOD (<5% of period)** |
+| `Task_E` | 5 | `19,000 µs` | 2 | `394.06 µs` | `197.03 µs` | `2.07%` | **GOOD (<5% of period)** |
+
+#### 4. Validating the Matplotlib Graph (`charts/jitter_chart.png`)
+The generated visual plot [charts/jitter_chart.png](charts/jitter_chart.png) renders the start-time variation for each task across the entire simulated timeline:
+* **Horizontal Axis (`Activation #`):** Represents discrete activation instances $k \in \{0, 1, \dots, K_i - 1\}$.
+* **Vertical Axis (`Jitter (µs)`):** Represents the dispatch latency $s_i(k) - k \cdot T_i$ in microseconds.
+* **Visual Trace Validation:**
+  - **`Task_A`:** Renders as a flat horizontal trace at $y = 0.00\text{ µs}$ across all 5 activation(s), visually proving zero start-time preemption.
+  - **`Task_B`:** Plots 3 point(s) peaking at $y = 95.36\text{ µs}$ (mean $y = 31.79\text{ µs}$), visually confirming that dispatch delays remain strictly bounded by higher-priority task execution windows.
+  - **`Task_C`:** Plots 3 point(s) peaking at $y = 194.80\text{ µs}$ (mean $y = 64.93\text{ µs}$), visually confirming that dispatch delays remain strictly bounded by higher-priority task execution windows.
+  - **`Task_D`:** Plots 2 point(s) peaking at $y = 294.13\text{ µs}$ (mean $y = 147.06\text{ µs}$), visually confirming that dispatch delays remain strictly bounded by higher-priority task execution windows.
+  - **`Task_E`:** Plots 2 point(s) peaking at $y = 394.06\text{ µs}$ (mean $y = 197.03\text{ µs}$), visually confirming that dispatch delays remain strictly bounded by higher-priority task execution windows.
+---
+
 ## 5. Expected vs Actual Tool Output
 
 ```
