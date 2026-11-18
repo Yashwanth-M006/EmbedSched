@@ -103,7 +103,7 @@ Because `Task_MotorControl` is excluded, the partial system contains only `Task_
    * **Slack Margin:** $20,000 - 71.00 = \mathbf{+19,929.00\text{ µs}}$ (`PASS`)
 
 2. **`Task_CANTransmit` ($T = 100,000\text{ µs}, D = 100,000\text{ µs}$):**
-   * $\text{hp}(\text{CAN}) = \{\text{Task}_{\text{Sensor}}\}$
+   * $\text{hp}(\tau_{\text{CAN}}) = \{\tau_{\text{Sensor}}\}$
    * Recurrence iterations:
      $$R_{\text{CAN}}^{(0)} = C_{\text{CAN}} = 35.00\text{ µs}$$
      $$R_{\text{CAN}}^{(1)} = 35.00 + \left\lceil \frac{35.00}{20,000} \right\rceil \times 71.00 = 35.00 + 71.00 = \mathbf{106.00\text{ µs}}\quad (\text{Converged})$$

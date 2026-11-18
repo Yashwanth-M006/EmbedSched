@@ -83,19 +83,19 @@ Recurrence: $R_i^{(k+1)} = C_i + \sum_{j \in \text{hp}(i)} \lceil R_i^{(k)} / T_
    * Slack Margin: $1,000 - 0.74 = \mathbf{+999.26\text{ µs}}$ (`PASS`)
 
 2. **`Task_MotorControl` (Priority 1):**
-   * $\text{hp} = \{\text{Task}_{\text{ISR}}\}$ ($C_{\text{ISR}} = 0.74\text{ µs}, T_{\text{ISR}} = 1,000\text{ µs}$)
+   * $\text{hp}(\tau_{\text{Motor}}) = \{\tau_{\text{ISR}}\}$ ($C_{\text{ISR}} = 0.74\text{ µs}, T_{\text{ISR}} = 1,000\text{ µs}$)
    * $R_1^{(0)} = 141.00\text{ µs}$
    * $R_1^{(1)} = 141.00 + \left\lceil \frac{141.00}{1,000} \right\rceil \times 0.74 = 141.00 + 0.74 = \mathbf{141.74\text{ µs}}\quad (\text{Converged})$
    * Slack Margin: $1,000 - 141.74 = \mathbf{+858.26\text{ µs}}$ (`PASS`)
 
 3. **`Task_SensorAgg` (Priority 2):**
-   * $\text{hp} = \{\text{Task}_{\text{ISR}}, \text{Task}_{\text{Motor}}\}$
+   * $\text{hp}(\tau_{\text{Sensor}}) = \{\tau_{\text{ISR}}, \tau_{\text{Motor}}\}$
    * $R_2^{(0)} = 71.00\text{ µs}$
    * $R_2^{(1)} = 71.00 + \left\lceil \frac{71.00}{1,000} \right\rceil \times 0.74 + \left\lceil \frac{71.00}{1,000} \right\rceil \times 141.00 = 71.00 + 0.74 + 141.00 = \mathbf{212.74\text{ µs}}\quad (\text{Converged})$
    * Slack Margin: $20,000 - 212.74 = \mathbf{+19,787.26\text{ µs}}$ (`PASS`)
 
 4. **`Task_CANTransmit` (Priority 3):**
-   * $\text{hp} = \{\text{Task}_{\text{ISR}}, \text{Task}_{\text{Motor}}, \text{Task}_{\text{Sensor}}\}$
+   * $\text{hp}(\tau_{\text{CAN}}) = \{\tau_{\text{ISR}}, \tau_{\text{Motor}}, \tau_{\text{Sensor}}\}$
    * $R_3^{(0)} = 35.00\text{ µs}$
    * $R_3^{(1)} = 35.00 + \left\lceil \frac{35.00}{1,000} \right\rceil \times 0.74 + \left\lceil \frac{35.00}{1,000} \right\rceil \times 141.00 + \left\lceil \frac{35.00}{20,000} \right\rceil \times 71.00 = 35.00 + 0.74 + 141.00 + 71.00 = \mathbf{247.74\text{ µs}}\quad (\text{Converged})$
    * Slack Margin: $100,000 - 247.74 = \mathbf{+99,752.26\text{ µs}}$ (`PASS`)

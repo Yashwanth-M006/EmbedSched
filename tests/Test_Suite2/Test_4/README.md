@@ -90,18 +90,22 @@ Applying IPET microarchitectural timing for Cortex-M4 at 168 MHz ($ws = 4$):
 Under PCP, a task $\tau_i$ can be blocked by at most one critical section belonging to any lower-priority task holding a mutex whose priority ceiling is greater than or equal to $Prio(\tau_i)$:
 $$B_i = \max_{j \in \text{lp}(i)} \max_{R \in \text{Res}(j), \text{Ceiling}(R) \le Prio(i)} CS(j, R)$$
 
-1. **Blocking for `Task_H` ($Prio = 1$):**
-   * Lower-priority tasks: $\text{lp}(H) = \{\text{Task}_M, \text{Task}_L\}$
-   * Mutexes with $\text{Ceiling} \le 1$: `mutex_spi` ($\text{Ceiling} = 1$).
-   * $B_H = CS(\text{Task}_L, \text{mutex}_{\text{spi}}) = \mathbf{3,000.00\text{ µs}}$
+1. **Blocking for `Task_H` ($\tau_H$, $Prio = 1$):**
+   * Lower-priority tasks: $\text{lp}(\tau_H) = \{\tau_M, \tau_L\}$
+   * Mutexes with $\text{Ceiling} \le 1$: `mutex_spi` ($R_{\text{spi}}$, $\text{Ceiling} = 1$).
+   * Blocking duration:
+     $$B_H = CS(\tau_L, R_{\text{spi}}) = \mathbf{3,000.00\text{ µs}}$$
 
-2. **Blocking for `Task_M` ($Prio = 2$):**
-   * Lower-priority tasks: $\text{lp}(M) = \{\text{Task}_L\}$
-   * Mutexes with $\text{Ceiling} \le 2$: `mutex_spi` ($\text{Ceiling} = 1$) and `mutex_i2c` ($\text{Ceiling} = 2$).
-   * $B_M = \max(CS(\text{Task}_L, \text{mutex}_{\text{spi}}), CS(\text{Task}_L, \text{mutex}_{\text{i2c}})) = \max(3.0\text{ ms}, 4.5\text{ ms}) = \mathbf{4,500.00\text{ µs}}$
+2. **Blocking for `Task_M` ($\tau_M$, $Prio = 2$):**
+   * Lower-priority tasks: $\text{lp}(\tau_M) = \{\tau_L\}$
+   * Mutexes with $\text{Ceiling} \le 2$: `mutex_spi` ($R_{\text{spi}}$) and `mutex_i2c` ($R_{\text{i2c}}$).
+   * Blocking duration:
+     $$B_M = \max\left(CS(\tau_L, R_{\text{spi}}),\, CS(\tau_L, R_{\text{i2c}})\right) = \max(3.0\text{ ms}, 4.5\text{ ms}) = \mathbf{4,500.00\text{ µs}}$$
 
-3. **Blocking for `Task_L` ($Prio = 3$, Lowest):**
-   * $\text{lp}(L) = \emptyset \implies B_L = \mathbf{0.00\text{ µs}}$
+3. **Blocking for `Task_L` ($\tau_L$, $Prio = 3$, Lowest):**
+   * Lower-priority tasks: $\text{lp}(\tau_L) = \emptyset$
+   * Blocking duration:
+     $$B_L = \mathbf{0.00\text{ µs}}$$
 
 ---
 
@@ -111,12 +115,12 @@ $$R_i^{(0)} = C_i + B_i$$
 $$R_i^{(k+1)} = C_i + B_i + \sum_{j \in \text{hp}(i)} \left\lceil \frac{R_i^{(k)}}{T_j} \right\rceil C_j$$
 
 #### Task H (Priority 1, $T_H = 10,000\text{ µs}, D_H = 10,000\text{ µs}$):
-* $\text{hp}(H) = \emptyset$
+* $\text{hp}(\tau_H) = \emptyset$
 * $R_H = C_H + B_H = 5,299.00 + 3,000.00 = \mathbf{8,299.00\text{ µs}} \le 10,000\text{ µs}$
 * **Slack Margin:** $10,000 - 8,299 = \mathbf{+1,701.00\text{ µs}}$ (`PASS`)
 
 #### Task M (Priority 2, $T_M = 20,000\text{ µs}, D_M = 20,000\text{ µs}$):
-* $\text{hp}(M) = \{\text{Task}_H\}$
+* $\text{hp}(\tau_M) = \{\tau_H\}$
 * $R_M^{(0)} = C_M + B_M = 3,533.00 + 4,500.00 = 8,033.00\text{ µs}$
 * $R_M^{(1)} = 3,533 + 4,500 + \left\lceil \frac{8,033}{10,000} \right\rceil \times 5,299 = 8,033 + 5,299 = 13,332.00\text{ µs}$
 * $R_M^{(2)} = 3,533 + 4,500 + \left\lceil \frac{13,332}{10,000} \right\rceil \times 5,299 = 8,033 + (2 \times 5,299) = 18,631.00\text{ µs}$
@@ -124,8 +128,8 @@ $$R_i^{(k+1)} = C_i + B_i + \sum_{j \in \text{hp}(i)} \left\lceil \frac{R_i^{(k)
 * **Slack Margin:** $20,000 - 18,631 = \mathbf{+1,369.00\text{ µs}}$ (`PASS`)
 
 #### Task L (Priority 3, $T_L = 40,000\text{ µs}, D_L = 40,000\text{ µs}$):
-* $\text{hp}(L) = \{\text{Task}_H, \text{Task}_M\}$
-* Preempted by higher-priority tasks $H$ and $M$:
+* $\text{hp}(\tau_L) = \{\tau_H, \tau_M\}$
+* Preempted by higher-priority tasks $\tau_H$ and $\tau_M$:
 * RTA converges at $R_L = \mathbf{42,393.00\text{ µs}} > 40,000\text{ µs}$
 * **Slack Margin:** $40,000 - 42,393 = \mathbf{-2,393.00\text{ µs}}$
 * **Verdict:** `MISS` (Deadline Overrun: $+2,393.00\text{ µs}$)

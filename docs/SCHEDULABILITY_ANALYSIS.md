@@ -441,14 +441,14 @@ $$\mathbf{Margin}_B = 6,000 - 6,200 = \mathbf{-200\ \mu\text{s}} \implies \mathb
   - $\tau_L$: $T = 40\text{ ms}, D = 40\text{ ms}, C = 8.0\text{ ms}, P = 3$ (uses `mutex_spi` for 3.0 ms, `mutex_i2c` for 4.5 ms)
 
 #### Ceilings:
-- $\text{Ceiling}(\text{mutex}_{\text{spi}}) = 1$
-- $\text{Ceiling}(\text{mutex}_{\text{i2c}}) = 2$
+- $\text{Ceiling}(R_{\text{spi}}) = 1$ (`mutex_spi`)
+- $\text{Ceiling}(R_{\text{i2c}}) = 2$ (`mutex_i2c`)
 
 #### PCP Blocking Calculation:
 - For $\tau_H$ (Priority 1):
-  $$B_H = \max(CS(\text{mutex}_{\text{spi}}, \tau_L)) = \mathbf{3.0\text{ ms}}$$
+  $$B_H = CS(R_{\text{spi}}, \tau_L) = \mathbf{3.0\text{ ms}}$$
 - For $\tau_M$ (Priority 2):
-  $$B_M = \max(CS(\text{mutex}_{\text{spi}}, \tau_L), CS(\text{mutex}_{\text{i2c}}, \tau_L)) = \max(3.0, 4.5) = \mathbf{4.5\text{ ms}}$$
+  $$B_M = \max(CS(R_{\text{spi}}, \tau_L),\, CS(R_{\text{i2c}}, \tau_L)) = \max(3.0, 4.5) = \mathbf{4.5\text{ ms}}$$
   *(Single-critical-section bound prevents summing $3.0 + 4.5 = 7.5\text{ ms}$).*
 
 #### Extended RTA with Blocking:
