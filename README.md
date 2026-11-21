@@ -554,6 +554,36 @@ python main.py \
 
 ## Required Inputs
 
+EmbedSched cross-correlates multi-tier compilation artifacts, microarchitectural models, RTOS configurations, and internal static synthesis engines:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                  INPUT ARTIFACT SOURCES                                         │
+├───────────────────────────────┬───────────────────────────────┬─────────────────────────────────┤
+│ 1. ELF Binary (firmware.elf)  │ 2. Linker Map (firmware.map)  │ 3. GNU Linker Script (linker.ld)│
+│    • .symtab (Symbols & Sizes)│    • Physical VMA Placements  │    • MEMORY Block Boundaries    │
+│    • .text (Disassembly bytes)│    • Special Linker Symbols   │    • Section Allocations        │
+│    • DWARF Debug Line/Info    │    • Discarded Sections Block │    • _Min_Stack_Size Definition │
+├───────────────────────────────┼───────────────────────────────┼─────────────────────────────────┤
+│ 4. Hardware Descriptor (YAML) │ 5. Stack Usage Files (*.su)   │ 6. RTOS Config (schedule.json)  │
+│    • chip.yaml Memory Regions │    • -fstack-usage Output     │    • Task Timing (T, D, Prio)   │
+│    • AHB Contention Matrix    │    • Per-function Frame Sizes │    • Shared Mutexes & Ceilings  │
+│    • Flash Wait-State Tables  │    • Frame Qualifiers         │    • Multicore IPC Spinlocks    │
+├───────────────────────────────┼───────────────────────────────┼─────────────────────────────────┤
+│ 7. GCC Loop Logs (-fopt-info) │ 8. Startup Assembly (*.s)     │ 9. Hot Functions File (*.txt)   │
+│    • Proven SCEV Loop Bounds  │    • NVIC Vector Table        │    • Critical Function Names    │
+│    • File & Source Line Tags  │    • Hardware ISR Identifiers │    • Real-time Hot Paths        │
+├───────────────────────────────┴───────────────────────────────┴─────────────────────────────────┤
+│ 10. Core Analysis & Synthesis Engines:                                                          │
+│     • Capstone Disassembly Engine & Call Graph DFS / Tarjan's SCC Cycle Detector                │
+│     • IPET Microarchitectural WCET Engine (Pipeline FSM & SciPy HiGHS ILP Solver)               │
+│     • Exact Response Time Analysis (RTA) Engine & Processor Demand Analysis (PDA)              │
+│     • Discrete-Event Scheduler Simulator (Hyperperiod LCM & Gantt Interval Engine)              │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+> **Comprehensive Source & Parameter Mapping:** See [`docs/RULES_PARAMETERS_AND_SOURCES.md`](docs/RULES_PARAMETERS_AND_SOURCES.md) for the complete parameter-by-parameter mapping and formal derivations for all 42 rules evaluated by EmbedSched.
+
 ### `firmware.elf`
 
 The linked ELF binary. Provides symbol addresses, sizes, section membership, and debug information.
